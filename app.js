@@ -82,7 +82,15 @@
       drawMe(pos.coords.accuracy);
       if (first) map.setView(me, 16); else map.panTo(me);
       loadAround(me[0], me[1]);
-    }, () => { toast('위치 권한이 없어 기본 위치로 시작해요'); loadAround(...DEFAULT); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 });
+    }, err => {
+      const inApp = /FBAN|FBAV|Instagram|KAKAOTALK|Line\/|NAVER\(inapp|wv\)/i.test(navigator.userAgent);
+      const msg = err.code === 1
+        ? (inApp ? '인앱 브라우저는 위치를 못 써요. 크롬/사파리로 열어주세요' : '위치 권한이 꺼져 있어요. 주소창 자물쇠 → 권한 → 위치 허용 후 📍')
+        : err.code === 3 ? 'GPS 신호를 못 잡았어요 (실내?). 📍 눌러 다시 시도' : '위치를 가져올 수 없어요. 폰 위치(GPS)가 켜져 있나요?';
+      toast(msg, 4500);
+      if (!location.protocol.startsWith('https') && location.hostname !== 'localhost') toast('HTTPS가 아니면 위치를 쓸 수 없어요', 4000);
+      if (first) loadAround(...DEFAULT);
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 });
   }
   function drawMe(acc) {
     if (!meMarker) { meMarker = L.marker(me, { icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), zIndexOffset: 1000 }).addTo(map); meAcc = L.circle(me, { radius: acc || 30, color: '#2b7cff', weight: 1, fillOpacity: .08 }).addTo(map); }
