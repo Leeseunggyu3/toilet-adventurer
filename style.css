@@ -96,3 +96,33 @@ a { color: inherit; text-decoration: none; }
 @keyframes bounce { to { transform: rotate(-45deg) translate(-4px, -4px); } }
 .me { width: 18px; height: 18px; border-radius: 50%; background: #2b7cff; border: 3px solid #fff; box-shadow: 0 0 0 8px rgba(43,124,255,.25); }
 .leaflet-control-zoom { display: none; }
+
+/* 변기 레벨 */
+.tlevel { display:flex; gap:12px; align-items:center; background:linear-gradient(135deg,#1b2a3a,#2d4a6a); color:#fff; border-radius:16px; padding:12px 14px; margin-top:12px; }
+.tl-badge { width:56px; height:56px; border-radius:50%; background:#ffe066; color:#1b2a3a; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; flex:none; box-shadow:0 0 0 4px rgba(255,224,102,.3); }
+.tl-badge span { font-size:10px; font-weight:700; } .tl-badge b { font-size:22px; }
+.tl-info { flex:1; min-width:0; }
+.tl-bar { height:8px; background:rgba(255,255,255,.2); border-radius:4px; overflow:hidden; } .tl-bar i { display:block; height:100%; width:0; background:#7ee8fa; transition:.4s; }
+.tl-meta { font-size:12px; margin-top:6px; opacity:.9; } .tl-first { font-size:11px; opacity:.75; margin-top:2px; }
+.tabs { display:flex; gap:6px; margin:12px 0 4px; border-bottom:1.5px solid #eee; }
+.tab { flex:1; padding:10px; border:none; background:none; font-size:14px; font-weight:700; color:#99a; border-bottom:3px solid transparent; cursor:pointer; }
+.tab.on { color:#1b2a3a; border-bottom-color:#ff3b3b; }
+.cnt { font-size:11px; background:#ff3b3b; color:#fff; border-radius:999px; padding:1px 6px; vertical-align:middle; } .cnt:empty { display:none; }
+/* 채팅 */
+.chips { display:flex; gap:6px; overflow-x:auto; padding:10px 0 6px; } .chips button { flex:none; padding:7px 11px; border-radius:999px; border:1.5px solid #e2e5ea; background:#fff; font-size:12px; cursor:pointer; }
+.chat { max-height:38vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:6px 0; }
+.msg { max-width:86%; padding:9px 12px; border-radius:14px; background:#f0f2f5; font-size:14px; line-height:1.4; align-self:flex-start; }
+.msg.mine { align-self:flex-end; background:#1b2a3a; color:#fff; }
+.msg.question { border:1.5px solid #ffcf33; background:#fff8dc; } .msg.mine.question { background:#6a5a1a; }
+.msg .who { font-size:11px; opacity:.7; margin-bottom:3px; display:flex; gap:6px; justify-content:space-between; }
+.msg .act { margin-top:6px; display:flex; gap:6px; } .msg .act button { font-size:11px; padding:4px 8px; border-radius:999px; border:1px solid #ccd; background:#fff; color:#1b2a3a; cursor:pointer; }
+.msg .help { font-size:11px; color:#1b7a34; font-weight:700; }
+.empty { font-size:13px; color:#99a; text-align:center; padding:20px 0; }
+.composer { display:flex; gap:8px; margin-top:8px; } .composer input { flex:1; padding:12px; border:1.5px solid #e2e5ea; border-radius:12px; font-size:15px; } .composer button { padding:0 16px; border:none; border-radius:12px; background:#ff3b3b; color:#fff; font-weight:800; cursor:pointer; }
+.replying { font-size:12px; color:#b8860b; margin-top:6px; }
+/* 수첩 */
+.nickrow { display:flex; gap:8px; margin-top:8px; } .nickrow input { flex:1; padding:11px; border:1.5px solid #e2e5ea; border-radius:12px; font-size:15px; font-weight:700; } .nickrow button { padding:0 14px; border:none; border-radius:12px; background:#1b2a3a; color:#fff; cursor:pointer; }
+.stats3 { display:flex; gap:8px; margin:12px 0; } .stats3 div { flex:1; background:#f0f2f5; border-radius:14px; padding:12px 6px; text-align:center; } .stats3 b { display:block; font-size:22px; } .stats3 span { font-size:11px; color:#667; }
+.badges { display:flex; flex-wrap:wrap; gap:6px; } .badges span { font-size:12px; padding:6px 10px; border-radius:999px; background:#fff8dc; border:1.5px solid #ffcf33; } .badges span.locked { opacity:.4; background:#f0f2f5; border-color:#e2e5ea; }
+.dex { display:flex; flex-direction:column; gap:6px; } .dex div { display:flex; justify-content:space-between; padding:10px 12px; background:#f0f2f5; border-radius:12px; font-size:14px; } .dex small { color:#667; }
+.tmark .lv { position:absolute; right:-6px; top:-6px; transform:rotate(45deg); background:#ffe066; color:#1b2a3a; font-size:9px; font-weight:800; border-radius:999px; padding:1px 4px; border:1.5px solid #fff; }

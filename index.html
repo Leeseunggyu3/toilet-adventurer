@@ -30,6 +30,8 @@
   <button class="fab" id="locBtn" title="내 위치">📍</button>
   <button class="fab" id="missionBtn" title="출동 미션">🎯</button>
   <button class="fab" id="addBtn" title="화장실 등록">➕</button>
+  <button class="fab" id="areaBtn" title="동네 광장">💬</button>
+  <button class="fab" id="profBtn" title="탐험가 수첩">🧭</button>
 </div>
 
 <!-- 급해요 버튼 -->
@@ -45,6 +47,20 @@
     </div>
     <button class="x" id="shClose">✕</button>
   </div>
+  <!-- 변기 레벨 카드 -->
+  <div class="tlevel">
+    <div class="tl-badge"><span>Lv</span><b id="tlLv">1</b></div>
+    <div class="tl-info">
+      <div class="tl-bar"><i id="tlFill"></i></div>
+      <div class="tl-meta"><span id="tlVisits">방문 0회</span> · <span id="tlExp">탐험가 0명</span> · <span id="tlMine">나 0회</span></div>
+      <div class="tl-first" id="tlFirst"></div>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-tab="status">상태 · 길찾기</button>
+    <button class="tab" data-tab="talk">💬 변기 이야기 <span class="cnt" id="talkCnt"></span></button>
+  </div>
+  <div id="tab-status">
   <div class="status" id="shStatus"></div>
   <div class="nav">
     <a id="navKakao" target="_blank" rel="noopener">카카오맵</a>
@@ -64,6 +80,58 @@
   </div>
   <button class="verify" id="verifyBtn">✅ 도착 인증 (50m 이내) +30💰</button>
   <button class="flag" id="flagBtn">⚠️ 여기 화장실 없음 신고</button>
+  </div>
+  <div id="tab-talk" class="hidden">
+    <div class="chips">
+      <button data-q="지금 휴지 있나요? 🧻">휴지 있나요?</button>
+      <button data-q="지금 줄 길어요? 🧍">줄 길어요?</button>
+      <button data-q="문 열려 있나요? 🚪">열려 있나요?</button>
+      <button data-q="비밀번호 있나요? 🔒">비번 있나요?</button>
+    </div>
+    <div class="chat" id="toiletChat"></div>
+    <form class="composer" id="toiletForm">
+      <input id="toiletMsg" maxlength="300" placeholder="이 변기에 남길 말…" autocomplete="off">
+      <button type="submit">전송</button>
+    </form>
+  </div>
+</div>
+
+<!-- 동네 광장 -->
+<div id="area" class="sheet hidden">
+  <div class="grip"></div>
+  <div class="sheet-head">
+    <div><h2>🏘️ 동네 광장</h2><div class="meta" id="areaMeta">반경 약 2km 안의 탐험가들</div></div>
+    <button class="x" id="areaClose">✕</button>
+  </div>
+  <div class="chips">
+    <button data-q="이 근처에 지금 열린 화장실 어디 있어요? 🚨">급해요, 어디?</button>
+    <button data-q="깨끗한 화장실 추천해주세요 ✨">깨끗한 곳 추천</button>
+    <button data-q="휴지 있는 곳 아시는 분? 🧻">휴지 있는 곳?</button>
+  </div>
+  <div class="chat" id="areaChat"></div>
+  <form class="composer" id="areaForm">
+    <input id="areaMsg" maxlength="300" placeholder="동네 탐험가들에게…" autocomplete="off">
+    <button type="submit">전송</button>
+  </form>
+  <p class="tiny">질문에 답하고 "도움됐어요"를 받으면 +15💰. 위치·개인정보는 올리지 마세요.</p>
+</div>
+
+<!-- 탐험가 수첩 -->
+<div id="profile" class="sheet hidden">
+  <div class="grip"></div>
+  <div class="sheet-head">
+    <div><h2>🧭 탐험가 수첩</h2><div class="meta" id="profRank"></div></div>
+    <button class="x" id="profClose">✕</button>
+  </div>
+  <div class="nickrow"><input id="nickInput" maxlength="20"><button id="nickSave">저장</button></div>
+  <div class="stats3">
+    <div><b id="stToilets">0</b><span>발견한 변기</span></div>
+    <div><b id="stVisits">0</b><span>총 방문</span></div>
+    <div><b id="stCoins">0</b><span>코인</span></div>
+  </div>
+  <div class="badges" id="badges"></div>
+  <div class="report-title">변기 도감</div>
+  <div class="dex" id="dex"></div>
 </div>
 
 <!-- 급해요 결과 카드 -->
@@ -114,7 +182,9 @@
 <div id="attrib">지도 © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> 기여자 · 화장실 데이터: OSM(ODbL) + 사용자 제보</div>
 
 <script src="vendor/leaflet.js" crossorigin=""></script>
+<script src="config.js"></script>
 <script src="store.js"></script>
+<script src="backend.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

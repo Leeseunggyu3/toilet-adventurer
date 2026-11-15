@@ -202,6 +202,140 @@
 
   $('locBtn').onclick = () => locate(false);
 
+  // =====================================================================
+  // 커뮤니티: 변기 레벨 · 변기 이야기 · 동네 광장 · 탐험가 수첩
+  // =====================================================================
+  const B = window.Backend;
+  const statsCache = new Map(); // toilet_id -> stats
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
+  if (B.demo) setTimeout(() => toast('데모 모드: 채팅은 이 기기에서만 보여요 (config.js에 Supabase 키를 넣으면 공유)', 3500), 2500);
+
+  // ---- 변기 레벨 카드 ----
+  async function loadToiletLevel(t) {
+    let s = statsCache.get(t.id);
+    if (!s) { try { s = await B.toiletStats(t.id); } catch (e) { s = { xp: 0, level: 1, visits: 0, explorers: 0, first_nick: null, mine: 0 }; } statsCache.set(t.id, s); }
+    if (sel !== t) return;
+    renderToiletLevel(s);
+    markers.get(t.id)?.setIcon(icon(t));
+  }
+  function renderToiletLevel(s) {
+    $('tlLv').textContent = s.level;
+    const cur = (s.level - 1) ** 2 * 25, nxt = s.level ** 2 * 25;
+    $('tlFill').style.width = `${Math.min(100, ((s.xp - cur) / (nxt - cur)) * 100)}%`;
+    $('tlVisits').textContent = `방문 ${s.visits}회`; $('tlExp').textContent = `탐험가 ${s.explorers}명`; $('tlMine').textContent = `나 ${s.mine}회`;
+    $('tlFirst').textContent = s.first_nick ? `🏁 1호 탐험가: ${s.first_nick}` : '🏁 아직 아무도 인증하지 않은 미개척 변기! 첫 탐험가가 되어보세요';
+  }
+  // 마커에 레벨 뱃지
+  const _icon = icon;
+  icon = function (t, target) {
+    const s = statsCache.get(t.id);
+    const lv = s && s.level > 1 ? `<span class="lv">${s.level}</span>` : '';
+    return L.divIcon({ className: '', html: `<div class="tmark ${target ? 'target' : cls(t)}"><i>🚻</i>${lv}</div>`, iconSize: [34, 34], iconAnchor: [17, 34] });
+  };
+
+  // 도착 인증 → 변기 XP 반영 (기존 verify 핸들러를 감싼다)
+  const _verify = $('verifyBtn').onclick;
+  $('verifyBtn').onclick = async () => {
+    const before = sel && Store.canVerify(sel.id);
+    _verify();
+    if (sel && before && !Store.canVerify(sel.id)) {
+      try {
+        const s = await B.recordVisit(sel.id, sel.name);
+        const prev = statsCache.get(sel.id);
+        statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
+        if (s.visits === 1) { reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
+        if (prev && s.level > prev.level) { reward(20, `🎉 변기 레벨업! Lv.${s.level}`); }
+        if (s.mine >= 10) unlock('regular');
+      } catch (e) { toast('방문 기록 동기화 실패'); }
+    }
+  };
+
+  // ---- 탭 ----
+  document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === b));
+    $('tab-status').classList.toggle('hidden', b.dataset.tab !== 'status');
+    $('tab-talk').classList.toggle('hidden', b.dataset.tab !== 'talk');
+    if (b.dataset.tab === 'talk' && sel) loadChat('toilet:' + sel.id, 'toiletChat');
+  });
+
+  // ---- 채팅 공통 ----
+  let replyTo = null, chatTimer = null;
+  const myId = B.me().id;
+  async function loadChat(channel, elId) {
+    const el = $(elId); let rows = [];
+    try { rows = await B.listMessages(channel); } catch (e) { el.innerHTML = '<div class="empty">채팅을 불러오지 못했어요</div>'; return; }
+    if (elId === 'toiletChat') $('talkCnt').textContent = rows.length || '';
+    if (!rows.length) { el.innerHTML = `<div class="empty">아직 조용해요. 첫 마디를 남겨보세요 🚽</div>`; return; }
+    const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+    el.innerHTML = rows.map(r => {
+      const mine = r.user_id === myId;
+      const parent = r.parent && byId[r.parent];
+      const canHelp = parent && parent.user_id === myId && !mine && !r._thanked;
+      return `<div class="msg ${mine ? 'mine' : ''} ${r.kind === 'question' ? 'question' : ''}" data-id="${r.id}">
+        <div class="who"><span>${r.kind === 'question' ? '❓ ' : ''}${esc(r.nick)}</span><span>${ago(r.at)}</span></div>
+        ${parent ? `<div style="font-size:11px;opacity:.7;margin-bottom:3px">↳ ${esc(parent.text.slice(0, 30))}</div>` : ''}
+        <div>${esc(r.text)}</div>
+        ${r.helpful ? `<div class="help">👍 도움됐어요 ${r.helpful}</div>` : ''}
+        <div class="act">${!mine ? `<button data-reply="${r.id}">답하기</button>` : ''}${canHelp ? `<button data-help="${r.id}">👍 도움됐어요 (+15💰)</button>` : ''}</div>
+      </div>`;
+    }).join('');
+    el.scrollTop = el.scrollHeight;
+    el.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { replyTo = b.dataset.reply; const inp = el.nextElementSibling.querySelector('input'); inp.placeholder = '답글 작성 중…'; inp.focus(); });
+    el.querySelectorAll('[data-help]').forEach(b => b.onclick = async () => { await B.markHelpful(b.dataset.help); b.remove(); toast('👍 답해준 탐험가에게 +15💰 전달!'); loadChat(channel, elId); });
+  }
+  async function send(channel, inputId, elId, toilet_id, text) {
+    text = (text || $(inputId).value).trim(); if (!text) return;
+    const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
+    try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { return toast('전송 실패'); }
+    $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
+    reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
+    loadChat(channel, elId);
+  }
+  $('toiletForm').onsubmit = e => { e.preventDefault(); if (sel) send('toilet:' + sel.id, 'toiletMsg', 'toiletChat', sel.id); };
+  $('areaForm').onsubmit = e => { e.preventDefault(); send(areaChannel(), 'areaMsg', 'areaChat', null); };
+  document.querySelectorAll('#tab-talk .chips button').forEach(b => b.onclick = () => { if (sel) send('toilet:' + sel.id, 'toiletMsg', 'toiletChat', sel.id, b.dataset.q); });
+  document.querySelectorAll('#area .chips button').forEach(b => b.onclick = () => send(areaChannel(), 'areaMsg', 'areaChat', null, b.dataset.q));
+
+  // ---- 동네 광장 ----
+  function areaChannel() { const c = me || DEFAULT; return 'area:' + tileKey(c[0], c[1]); }
+  $('areaBtn').onclick = () => {
+    closeSheets(); $('area').classList.remove('hidden');
+    $('areaMeta').textContent = me ? '내 위치 기준 약 2km 격자 안의 탐험가들' : '위치를 켜면 우리 동네 채널로 연결돼요';
+    loadChat(areaChannel(), 'areaChat');
+    clearInterval(chatTimer); chatTimer = setInterval(() => { if (!$('area').classList.contains('hidden')) loadChat(areaChannel(), 'areaChat'); else clearInterval(chatTimer); }, 6000);
+  };
+  $('areaClose').onclick = () => { $('area').classList.add('hidden'); clearInterval(chatTimer); };
+  function closeSheets() { ['sheet', 'sos', 'area', 'profile'].forEach(id => $(id).classList.add('hidden')); }
+
+  // ---- 탐험가 수첩 ----
+  const BADGES = { first: '🏁 1호 탐험가', regular: '🪑 단골 (한 변기 10회)', ten: '🔟 변기 10곳 발견', fifty: '5️⃣0️⃣ 변기 50곳 발견', helper: '🤝 동네 해결사', reporter: '📣 상태 보고 30회' };
+  const unlocked = () => { try { return JSON.parse(localStorage.getItem('ghc-badges') || '{}'); } catch (e) { return {}; } };
+  function unlock(k) { const u = unlocked(); if (u[k]) return; u[k] = 1; try { localStorage.setItem('ghc-badges', JSON.stringify(u)); } catch (e) {} toast(`🏅 뱃지 획득: ${BADGES[k]}`, 2500); }
+  $('profBtn').onclick = async () => {
+    closeSheets(); $('profile').classList.remove('hidden');
+    $('nickInput').value = B.me().nick; $('profRank').textContent = $('rankLabel').textContent;
+    let v = []; try { v = await B.myVisits(); } catch (e) {}
+    const total = v.reduce((a, x) => a + x.count, 0);
+    $('stToilets').textContent = v.length; $('stVisits').textContent = total; $('stCoins').textContent = Store.coins.toLocaleString();
+    if (v.length >= 10) unlock('ten'); if (v.length >= 50) unlock('fifty');
+    const u = unlocked();
+    $('badges').innerHTML = Object.entries(BADGES).map(([k, n]) => `<span class="${u[k] ? '' : 'locked'}">${n}</span>`).join('');
+    $('dex').innerHTML = v.length ? v.map(x => `<div><span>🚻 ${esc(x.toilet_name || x.toilet_id)}</span><small>${x.count}회 · ${ago(x.last)}</small></div>`).join('') : '<div class="empty">아직 도감이 비어 있어요. 도착 인증으로 첫 변기를 등록하세요!</div>';
+  };
+  $('profClose').onclick = () => $('profile').classList.add('hidden');
+  $('nickSave').onclick = () => { const n = $('nickInput').value.trim().slice(0, 20); if (!n) return; B.setNick(n); toast('닉네임 저장!'); };
+
+  // 시트 열릴 때 변기 레벨/채팅 로드 (openSheet 확장)
+  const _open = openSheet;
+  openSheet = function (t) {
+    _open(t);
+    document.querySelector('.tab[data-tab="status"]').click();
+    renderToiletLevel(statsCache.get(t.id) || { xp: 0, level: 1, visits: 0, explorers: 0, first_nick: null, mine: 0 });
+    loadToiletLevel(t);
+    B.listMessages('toilet:' + t.id).then(r => { $('talkCnt').textContent = r.length || ''; }).catch(() => {});
+  };
+
   // ===== 시작 =====
   refreshHUD();
   locate(true);
