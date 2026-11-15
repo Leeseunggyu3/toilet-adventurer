@@ -40,7 +40,13 @@
   class SupabaseBackend {
     constructor(url, key) { this.demo = false; this.url = url.replace(/\/$/, ''); this.h = { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }; }
     async _get(path) { const r = await fetch(`${this.url}/rest/v1/${path}`, { headers: this.h }); if (!r.ok) throw new Error(await r.text()); return r.json(); }
-    async _post(table, body) { const r = await fetch(`${this.url}/rest/v1/${table}`, { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, this.h), body: JSON.stringify(body) }); if (!r.ok) throw new Error(await r.text()); return (await r.json())[0]; }
+    async _post(table, body) {
+      // null 필드는 보내지 않고, 응답 본문도 요구하지 않는다 (실패 지점 최소화)
+      const clean = {}; for (const k in body) if (body[k] !== null && body[k] !== undefined) clean[k] = body[k];
+      const r = await fetch(`${this.url}/rest/v1/${table}`, { method: 'POST', headers: Object.assign({ Prefer: 'return=minimal' }, this.h), body: JSON.stringify(clean) });
+      if (!r.ok) { let t = await r.text(); try { const j = JSON.parse(t); t = `[${r.status} ${j.code || ''}] ${j.message || t}`; } catch (e) { t = `[${r.status}] ${t}`; } throw new Error(t); }
+      return clean;
+    }
     me() { return { id: uid, nick: getNick() }; }
     setNick(n) { try { localStorage.setItem('ghc-nick', n); } catch (e) {} }
     async listMessages(channel) { return (await this._get(`messages?channel=eq.${encodeURIComponent(channel)}&order=at.desc&limit=80`)).reverse(); }

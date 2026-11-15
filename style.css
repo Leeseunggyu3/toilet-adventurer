@@ -81,7 +81,7 @@ a { color: inherit; text-decoration: none; }
 .banner div { flex: 1; }
 .banner button { border: none; border-radius: 8px; padding: 7px 10px; font-size: 12px; cursor: pointer; background: #ffe066; color: #1b2a3a; font-weight: 700; }
 .banner button:last-child { background: transparent; color: #fff; }
-#toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%) translateY(20px); z-index: 40; background: rgba(27,42,58,.95); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 700; opacity: 0; transition: .25s; pointer-events: none; white-space: nowrap; }
+#toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%) translateY(20px); z-index: 40; background: rgba(27,42,58,.95); color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 700; opacity: 0; transition: .25s; pointer-events: none; max-width: 92vw; text-align: center; }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #attrib { position: fixed; left: 8px; bottom: 6px; z-index: 5; font-size: 9px; color: #334; background: rgba(255,255,255,.75); padding: 2px 6px; border-radius: 6px; }
 #attrib a { text-decoration: underline; }

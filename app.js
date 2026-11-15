@@ -256,7 +256,7 @@
         if (s.visits === 1) { reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
         if (prev && s.level > prev.level) { reward(20, `🎉 변기 레벨업! Lv.${s.level}`); }
         if (s.mine >= 10) unlock('regular');
-      } catch (e) { toast('방문 기록 동기화 실패'); }
+      } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     }
   };
 
@@ -296,7 +296,7 @@
   async function send(channel, inputId, elId, toilet_id, text) {
     text = (text || $(inputId).value).trim(); if (!text) return;
     const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
-    try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { return toast('전송 실패'); }
+    try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { console.error(e); return toast('전송 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
     reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
     loadChat(channel, elId);
