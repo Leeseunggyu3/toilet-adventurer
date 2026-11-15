@@ -1,0 +1,11 @@
+{
+  "name": "급해요 시티",
+  "short_name": "급해요",
+  "description": "가장 가까운 공중화장실을 찾고, 검증하고, 보상받는 화장실 지도 게임",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1b2a3a",
+  "theme_color": "#1b2a3a",
+  "lang": "ko",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

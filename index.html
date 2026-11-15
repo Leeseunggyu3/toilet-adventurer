@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1b2a3a">
+<title>급해요 시티 — 가장 가까운 화장실, 지금</title>
+<meta name="description" content="GPS로 가장 가까운 공중화장실을 찾고, 검증하고 보상받는 화장실 지도 게임">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map"></div>
+
+<!-- 상단 HUD -->
+<header id="hud">
+  <div class="hud-left">
+    <div class="title">🚻 급해요 시티</div>
+    <div class="rank" id="rankLabel">수습 화장실 지킴이</div>
+  </div>
+  <div class="hud-right">
+    <div class="coin">💰 <b id="coins">0</b></div>
+    <div class="lvl">Lv.<b id="level">1</b> <span class="xpbar"><i id="xpfill"></i></span></div>
+  </div>
+</header>
+
+<!-- 지도 위 컨트롤 -->
+<div id="ctrls">
+  <button class="fab" id="locBtn" title="내 위치">📍</button>
+  <button class="fab" id="missionBtn" title="출동 미션">🎯</button>
+  <button class="fab" id="addBtn" title="화장실 등록">➕</button>
+</div>
+
+<!-- 급해요 버튼 -->
+<button id="sosBtn">🚨 급해요!</button>
+
+<!-- 하단 시트 -->
+<div id="sheet" class="sheet hidden">
+  <div class="grip"></div>
+  <div class="sheet-head">
+    <div>
+      <h2 id="shName">화장실</h2>
+      <div class="meta" id="shMeta"></div>
+    </div>
+    <button class="x" id="shClose">✕</button>
+  </div>
+  <div class="status" id="shStatus"></div>
+  <div class="nav">
+    <a id="navKakao" target="_blank" rel="noopener">카카오맵</a>
+    <a id="navNaver" target="_blank" rel="noopener">네이버지도</a>
+    <a id="navGoogle" target="_blank" rel="noopener">구글맵</a>
+  </div>
+  <div class="report-title">상태 보고하고 코인 받기</div>
+  <div class="reports">
+    <button data-k="open" data-v="1">🟢 열려있음</button>
+    <button data-k="open" data-v="0">🔴 잠김/폐쇄</button>
+    <button data-k="paper" data-v="1">🧻 휴지 있음</button>
+    <button data-k="paper" data-v="0">🚫 휴지 없음</button>
+    <button data-k="clean" data-v="1">✨ 깨끗함</button>
+    <button data-k="clean" data-v="0">🤢 더러움</button>
+    <button data-k="queue" data-v="0">🚶 줄 없음</button>
+    <button data-k="queue" data-v="1">🧍🧍 줄 김</button>
+  </div>
+  <button class="verify" id="verifyBtn">✅ 도착 인증 (50m 이내) +30💰</button>
+  <button class="flag" id="flagBtn">⚠️ 여기 화장실 없음 신고</button>
+</div>
+
+<!-- 급해요 결과 카드 -->
+<div id="sos" class="sheet hidden">
+  <div class="grip"></div>
+  <div class="sos-head">
+    <div class="sos-big" id="sosDist">—</div>
+    <div class="sos-sub">가장 가까운 <b>열려 있는</b> 화장실</div>
+  </div>
+  <h2 id="sosName"></h2>
+  <div class="meta" id="sosMeta"></div>
+  <div class="nav big">
+    <a id="sosKakao" target="_blank" rel="noopener">카카오맵 길찾기</a>
+    <a id="sosNaver" target="_blank" rel="noopener">네이버 길찾기</a>
+    <a id="sosGoogle" target="_blank" rel="noopener">구글맵</a>
+  </div>
+  <div class="sos-actions">
+    <button id="sosNext">다음 후보 →</button>
+    <button id="sosClose">닫기</button>
+  </div>
+  <p class="tiny">급해요 모드에는 광고가 없습니다. 도착하면 "도착 인증"으로 다음 사람을 도와주세요.</p>
+</div>
+
+<!-- 등록 다이얼로그 -->
+<div id="addDlg" class="modal hidden">
+  <div class="card">
+    <h3>➕ 화장실 등록</h3>
+    <p>지도 중앙 십자 위치에 화장실이 있나요?</p>
+    <input id="addName" placeholder="이름 (예: ○○공원 공중화장실)">
+    <label><input type="checkbox" id="addFree" checked> 누구나 이용 가능</label>
+    <div class="row">
+      <button id="addCancel">취소</button>
+      <button id="addOk" class="primary">등록 +50💰</button>
+    </div>
+    <p class="tiny">등록은 다른 사용자의 검증을 받아야 확정됩니다. 사유지 화장실은 등록하지 마세요.</p>
+  </div>
+</div>
+<div id="crosshair" class="hidden">✛</div>
+
+<!-- 미션 배너 -->
+<div id="mission" class="banner hidden">
+  <div><b>🎯 출동 미션</b> <span id="missionText"></span></div>
+  <button id="missionGo">안내</button>
+  <button id="missionX">✕</button>
+</div>
+
+<div id="toast"></div>
+<div id="attrib">지도 © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> 기여자 · 화장실 데이터: OSM(ODbL) + 사용자 제보</div>
+
+<script src="vendor/leaflet.js" crossorigin=""></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
