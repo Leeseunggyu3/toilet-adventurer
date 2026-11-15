@@ -218,6 +218,7 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
   if (B.demo) setTimeout(() => toast('데모 모드: 채팅은 이 기기에서만 보여요 (config.js에 Supabase 키를 넣으면 공유)', 3500), 2500);
+  else B.listMessages('area:ping').then(() => setTimeout(() => toast('🌐 탐험가 서버 연결됨', 2500), 2500)).catch(e => setTimeout(() => toast('서버 연결 실패: ' + String(e.message || e).slice(0, 80), 6000), 2500));
 
   // ---- 변기 레벨 카드 ----
   async function loadToiletLevel(t) {
