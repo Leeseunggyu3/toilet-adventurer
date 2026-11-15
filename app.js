@@ -1,4 +1,4 @@
-/* 급해요 시티 v0 — app.js */
+/* Toilet Adventurer — app.js */
 (() => {
   const $ = id => document.getElementById(id);
   const toast = (m, ms = 1800) => { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };
@@ -152,7 +152,7 @@
   };
   $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
 
-  // ===== 급해요 =====
+  // ===== 구조 신청 =====
   $('sosBtn').onclick = () => {
     if (!me) { toast('내 위치를 찾는 중…'); locate(true); return; }
     sosList = [...toilets.values()].filter(t => !t.flagged && Store.fresh(t.id, 'open', 6) !== 0)
@@ -315,7 +315,7 @@
     clearInterval(chatTimer); chatTimer = setInterval(() => { if (!$('area').classList.contains('hidden')) loadChat(areaChannel(), 'areaChat'); else clearInterval(chatTimer); }, 6000);
   };
   $('areaClose').onclick = () => { $('area').classList.add('hidden'); clearInterval(chatTimer); };
-  function closeSheets() { ['sheet', 'sos', 'area', 'profile'].forEach(id => $(id).classList.add('hidden')); }
+  function closeSheets() { ['sheet', 'sos', 'area', 'profile', 'help'].forEach(id => $(id).classList.add('hidden')); }
 
   // ---- 탐험가 수첩 ----
   const BADGES = { first: '🏁 1호 탐험가', regular: '🪑 단골 (한 변기 10회)', ten: '🔟 변기 10곳 발견', fifty: '5️⃣0️⃣ 변기 50곳 발견', helper: '🤝 동네 해결사', reporter: '📣 상태 보고 30회' };
@@ -334,6 +334,38 @@
   };
   $('profClose').onclick = () => $('profile').classList.add('hidden');
   $('nickSave').onclick = () => { const n = $('nickInput').value.trim().slice(0, 20); if (!n) return; B.setNick(n); toast('닉네임 저장!'); };
+
+  // ---- 도움말: 튜토리얼 / 사용법 ----
+  const TUT = [
+    ['🧭', '당신은 변기 탐험가', '이 지도의 핀 하나하나가 변기입니다. 동네 변기를 발견하고, 방문하고, 기록을 남기는 것이 탐험가의 일이에요.'],
+    ['🚨', '급하면 구조 신청', '아래 빨간 "구조 신청" 버튼을 누르면 가장 가까운 화장실과 길찾기가 바로 나옵니다. 급할 땐 이것 하나만 기억하세요.'],
+    ['✅', '도착하면 인증', '변기 50m 안에서 "도착 인증"을 누르면 코인을 받고, 그 변기의 경험치가 올라 레벨이 오릅니다. 첫 인증자는 1호 탐험가!'],
+    ['🧻', '상태를 알려주세요', '휴지 있음, 잠김, 깨끗함 같은 상태를 버튼 하나로 보고하면 다음 사람이 헛걸음하지 않아요. 보고할 때마다 코인.'],
+    ['💬', '동네 탐험가와 대화', '변기마다 "변기 이야기" 채팅이 있고, 💬 버튼은 주변 2km "동네 광장"입니다. 질문에 답해 주면 보상을 받아요.'],
+    ['🚀', '준비 완료', '먼저 📍로 내 위치를 잡고, 가까운 핀을 눌러 보세요. 이 안내는 ❓ 버튼에서 언제든 다시 볼 수 있습니다.'],
+  ];
+  let tutI = 0;
+  function renderTut() {
+    const [e, t, b] = TUT[tutI];
+    $('tutEmoji').textContent = e; $('tutTitle').textContent = t; $('tutBody').textContent = b;
+    $('tutDots').innerHTML = TUT.map((_, i) => `<i class="${i === tutI ? 'on' : ''}"></i>`).join('');
+    $('tutPrev').disabled = tutI === 0;
+    $('tutNext').textContent = tutI === TUT.length - 1 ? '탐험 시작!' : '다음';
+  }
+  function helpTab(name) {
+    document.querySelectorAll('.htab').forEach(x => x.classList.toggle('on', x.dataset.htab === name));
+    $('htab-tut').classList.toggle('hidden', name !== 'tut'); $('htab-guide').classList.toggle('hidden', name !== 'guide');
+  }
+  function openHelp(tab) { closeSheets(); $('help').classList.remove('hidden'); tutI = 0; renderTut(); helpTab(tab); }
+  function closeHelp() { $('help').classList.add('hidden'); try { localStorage.setItem('ghc-tut-done', '1'); } catch (e) {} }
+  document.querySelectorAll('.htab').forEach(b => b.onclick = () => helpTab(b.dataset.htab));
+  $('helpBtn').onclick = () => openHelp('tut');
+  $('helpClose').onclick = closeHelp;
+  $('tutPrev').onclick = () => { if (tutI > 0) { tutI--; renderTut(); } };
+  $('tutNext').onclick = () => { if (tutI < TUT.length - 1) { tutI++; renderTut(); } else closeHelp(); };
+  // 첫 방문이면 튜토리얼 자동 표시
+  let tutDone = false; try { tutDone = !!localStorage.getItem('ghc-tut-done'); } catch (e) {}
+  if (!tutDone) setTimeout(() => openHelp('tut'), 1200);
 
   // 시트 열릴 때 변기 레벨/채팅 로드 (openSheet 확장)
   const _open = openSheet;
