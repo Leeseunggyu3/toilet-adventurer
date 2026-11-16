@@ -72,6 +72,10 @@ try {
   await page.click('.reports button[data-k=paper][data-v="1"]'); await page.waitForTimeout(500);
   check('상태 보고가 서버로 전송됨', db.reports.some(x => x.k === 'paper' && x.v === 1));
   check('상태 보고하면 코인이 오름', +(await page.innerText('#coins')).replace(/,/g, '') > coins0);
+  const c1 = +(await page.innerText('#coins')).replace(/,/g, '');
+  await page.click('.reports button[data-k=paper][data-v="0"]'); await page.waitForTimeout(400);
+  check('같은 항목을 바로 다시 보고하면 코인이 늘지 않음', +(await page.innerText('#coins')).replace(/,/g, '') === c1);
+  await page.click('.reports button[data-k=paper][data-v="1"]'); await page.waitForTimeout(300);
   check('보고한 상태가 시트에 표시됨', (await page.innerText('#shStatus')).includes('휴지 있음'));
 
   await page.click('#verifyBtn'); await page.waitForTimeout(800);
@@ -131,6 +135,17 @@ try {
   check('프로필 조회: 상대의 스티커와 획득 칭호 목록 표시', (await page.locator('#peekBoard .stk').count()) === 1 && (await page.locator('#peekTitles .ttl').count()) === 2);
   await page.click('#peekClose');
 
+  // ---- 도움됐어요: 답변자가 실제로 보상을 받는다 ----
+  { const myUid = await page.evaluate(() => localStorage.getItem('ghc-uid')); const ch = db.messages.at(-1).channel;
+    db.messages.push({ id: 'q9', channel: ch, user_id: 'other2', nick: '🐸 질문자', text: '휴지 있나요?', kind: 'question', helpful: 0, at: new Date().toISOString() });
+    db.messages.push({ id: 'a9', channel: ch, user_id: myUid, nick: 'me', text: '있어요', kind: 'answer', parent: 'q9', helpful: 1, at: new Date().toISOString() });
+    const cb = +(await page.innerText('#coins')).replace(/,/g, '');
+    await page.click('#areaBtn'); await page.waitForTimeout(700);
+    check('도움됐어요를 받은 내 답변에 +15 보상', +(await page.innerText('#coins')).replace(/,/g, '') === cb + 15, (await page.innerText('#coins')));
+    await page.click('#areaClose'); await page.click('#areaBtn'); await page.waitForTimeout(700);
+    check('같은 답변으로 두 번 받지 않음', +(await page.innerText('#coins')).replace(/,/g, '') === cb + 15);
+    await page.click('#areaClose'); }
+
   // ---- 유물: 어려운 칭호에만, 여러 개 장착, 작은 효과 ----
   await page.click('#profBtn'); await page.waitForTimeout(300);
   check('유물: 쉬운 칭호만으로는 유물이 없음(전부 잠김)', (await page.locator('#relics .ttl.got').count()) === 0 && (await page.locator('#relics .ttl.locked').count()) === 7);
@@ -148,6 +163,24 @@ try {
   check('유물: 효과가 인증 버튼에 반영(55m, +33)', vlabel.includes('55m') && vlabel.includes('+33'), vlabel);
   await page.click('#shClose');
 
+  // ---- 코인 상점 · 오늘의 보너스 ----
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('ghc-v0')); s.coins = 500; localStorage.setItem('ghc-v0', JSON.stringify(s)); });
+  await page.reload(); await page.waitForTimeout(1500);
+  await page.click('#coinBtn'); await page.waitForTimeout(300);
+  check('상점: 화면 위 코인을 누르면 열림', await page.isVisible('#shop') && (await page.innerText('#shopCoins')).includes('500'));
+  await page.click('#bonusBtn'); await page.waitForTimeout(300);
+  check('상점: 오늘의 보너스는 하루 한 번(+50)', (await page.innerText('#shopCoins')).includes('550') && await page.isDisabled('#bonusBtn'));
+  await page.click('#shopList [data-buy="bg_night"]'); await page.waitForTimeout(300);
+  check('상점: 배경을 사면 코인이 줄고 바로 적용', (await page.innerText('#shopCoins')).includes('400') && (await page.innerText('#shopList')).includes('적용 중'));
+  await page.click('#shopList [data-buy="bg_gold"]'); await page.waitForTimeout(300);
+  check('상점: 코인이 부족하면 살 수 없음', (await page.innerText('#shopCoins')).includes('400'));
+  await page.click('#shopTabs button[data-k="pack"]'); await page.click('#shopList [data-buy="pk_sea"]'); await page.waitForTimeout(300);
+  await page.click('#shopClose'); await page.click('#profBtn'); await page.waitForTimeout(400);
+  check('상점: 산 배경이 프로필 카드에 적용', (await page.evaluate(() => document.getElementById('myBoard').style.background)).includes('gradient'));
+  await page.click('#decoBtn'); await page.waitForTimeout(200);
+  check('상점: 산 스티커 묶음이 꾸미기 목록에 나옴', (await page.innerText('#tray')).includes('🐳'));
+  await page.click('#decoCancel'); await page.click('#profClose');
+
   // ---- 게스트 → 구글 로그인 → 다른 기록 불러오기 ----
   await page.click('#profBtn'); await page.waitForTimeout(300);
   check('계정: 처음엔 게스트로 표시되고 구글 로그인 버튼이 있음', (await page.innerText('#acct')).includes('게스트') && await page.isVisible('#acctIn'));
@@ -164,6 +197,9 @@ try {
   await page.click('#useCloud'); await page.waitForTimeout(2500);
   check('계정: 계정 기록을 불러오면 닉네임·코인·경지가 복원됨', (await page.evaluate(() => localStorage.getItem('ghc-uid'))) === 'xotherdevice1' && (await page.innerText('#coins')) === '777' && (await page.innerText('#rankLabel')) === '소용돌이', await page.innerText('#rankLabel'));
 
+  check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);
+  const pv = await page.request.get(BASE + '/privacy.html');
+  check('개인정보처리방침 페이지가 열림', pv.ok() && (await pv.text()).includes('개인정보처리방침'));
   check('전체 흐름 중 자바스크립트 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 300));
 } catch (e) {
   check('점검 스크립트가 끝까지 실행됨', false, String(e).slice(0, 300));

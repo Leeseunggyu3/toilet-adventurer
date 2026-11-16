@@ -8,7 +8,8 @@ const Store = (() => {
   let s = { coins: 0, xp: 0, reports: {}, toilets: {}, verified: {}, daily: { day: '', done: 0 }, quests: 0 };
   try { const raw = localStorage.getItem(KEY); if (raw) s = Object.assign(s, JSON.parse(raw)); } catch (e) {}
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} };
-  const today = () => new Date().toISOString().slice(0, 10);
+  // 하루의 기준은 사용자의 현지 날짜
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
 
   return {
     get coins() { return s.coins; },

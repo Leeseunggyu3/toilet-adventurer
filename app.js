@@ -40,24 +40,39 @@
 
   // ===== 화장실 데이터 (OSM Overpass, 사용자 등록) =====
   function tileKey(lat, lng) { return `${Math.floor(lat * 50)}:${Math.floor(lng * 50)}`; } // ~2km 격자
-  async function loadAround(lat, lng) {
+  // 격자 한 칸(약 2km) 전체를 불러온다. 예전에는 '처음 본 지점 주변 1.3km'만 불러와서 같은 칸 안의 먼 곳이 비는 문제가 있었다
+  async function loadCell(lat, lng) {
     const k = tileKey(lat, lng); if (fetched.has(k)) return; fetched.add(k);
-    const d = 0.012; // 약 1.3km
-    const q = `[out:json][timeout:20];(node["amenity"="toilets"](${lat - d},${lng - d},${lat + d},${lng + d});way["amenity"="toilets"](${lat - d},${lng - d},${lat + d},${lng + d}););out center 200;`;
-    const cacheKey = 'ghc-osm-' + k;
+    const gx = Math.floor(lat * 50), gy = Math.floor(lng * 50), pad = 0.003;
+    const s = gx / 50 - pad, n = (gx + 1) / 50 + pad, w = gy / 50 - pad, e2 = (gy + 1) / 50 + pad;
+    const q = `[out:json][timeout:20];(node["amenity"="toilets"](${s},${w},${n},${e2});way["amenity"="toilets"](${s},${w},${n},${e2}););out center 300;`;
+    const cacheKey = 'ghc-osm2-' + k;
     let data = null;
     try { const c = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (c && Date.now() - c.t < 7 * 864e5) data = c.d; } catch (e) {}
     if (!data) {
       try {
         const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + enc(q) });
         const j = await r.json();
-        data = (j.elements || []).map(e => ({ id: 'osm' + e.id, lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon, name: e.tags?.name || e.tags?.['name:ko'] || '공중화장실', src: 'osm', tags: e.tags || {} })).filter(t => t.lat && t.lng);
+        data = (j.elements || []).map(e => ({ id: (e.type === 'way' ? 'osmw' : 'osm') + e.id, lat: e.lat ?? e.center?.lat, lng: e.lon ?? e.center?.lon, name: e.tags?.name || e.tags?.['name:ko'] || '공중화장실', src: 'osm', tags: e.tags || {} })).filter(t => t.lat && t.lng);
         try { localStorage.setItem(cacheKey, JSON.stringify({ t: Date.now(), d: data })); } catch (e) {}
       } catch (e) { fetched.delete(k); toast('화장실 데이터를 불러오지 못했어요 (네트워크)'); return; }
     }
-    let n = 0; for (const t of data) if (!toilets.has(t.id)) { toilets.set(t.id, t); addMarker(t); n++; }
-    if (n) toast(`주변 화장실 ${n}곳 불러옴`);
+    let cnt = 0; for (const t of data) if (!toilets.has(t.id)) { toilets.set(t.id, t); addMarker(t); cnt++; }
+    return cnt;
   }
+  // 현재 칸 + (가장자리에 가까우면) 이웃 칸. Overpass에 부담을 주지 않도록 한 번에 하나씩 순서대로 요청한다
+  let loadChain = Promise.resolve();
+  function loadAround(lat, lng) {
+    const d = 0.006, pts = [[lat, lng], [lat + d, lng], [lat - d, lng], [lat, lng + d], [lat, lng - d]];
+    const seen = new Set();
+    for (const [a1, b1] of pts) {
+      const k = tileKey(a1, b1); if (seen.has(k) || fetched.has(k)) continue; seen.add(k);
+      loadChain = loadChain.then(() => loadCell(a1, b1)).then(c => { if (c) toast(`주변 화장실 ${c}곳 불러옴`); }).catch(() => {});
+    }
+    return loadChain;
+  }
+  // 예전 형식의 지도 캐시 정리 (저장 공간 확보)
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('ghc-osm-')) localStorage.removeItem(k); } } catch (e) {}
   function describe(t) {
     const tg = t.tags || {}, bits = [];
     if (tg.fee === 'yes') bits.push('유료'); if (tg.wheelchair === 'yes') bits.push('♿ 휠체어'); if (tg.opening_hours) bits.push(tg.opening_hours);
@@ -145,6 +160,10 @@
     window.Backend.postReport(sel.id, b.dataset.k, +b.dataset.v).catch(e => toast('보고 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     renderStatus(sel); restyle();
     document.querySelectorAll('.reports button').forEach(x => { if (x.dataset.k === b.dataset.k) x.classList.toggle('done', x === b); });
+    // 같은 변기의 같은 항목은 30분에 한 번만 보상 (연타로 코인을 불리지 못하게)
+    const ck = sel.id + ':' + b.dataset.k, cd = (ach.rcd || (ach.rcd = {}));
+    if (Date.now() - (cd[ck] || 0) < 30 * 60000) { achSave(); return toast('보고를 고쳤어요 (같은 항목 보상은 30분마다)'); }
+    cd[ck] = Date.now(); for (const key in cd) if (Date.now() - cd[key] > 2 * HOUR) delete cd[key];
     achEvent('rep');
     reward((near ? 10 : 3) + rb('rep'), near ? '현장 보고!' : '보고 (현장이면 10💰)');
     checkDaily();
@@ -190,12 +209,15 @@
   $('addCancel').onclick = () => { $('crosshair').classList.add('hidden'); $('addDlg').classList.add('hidden'); };
   $('addOk').onclick = () => {
     const c = map.getCenter(); const name = $('addName').value.trim() || '사용자 등록 화장실';
-    const t = { id: 'u' + Date.now(), lat: c.lat, lng: c.lng, name, src: 'user', tags: { access: $('addFree').checked ? 'yes' : 'customers' } };
+    const t = { id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), lat: c.lat, lng: c.lng, name, src: 'user', tags: { access: $('addFree').checked ? 'yes' : 'customers' } };
     Store.addToilet(t); toilets.set(t.id, t); addMarker(t);
     window.Backend.addToilet(t).catch(e => toast('등록 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     $('addCancel').onclick(); $('addName').value = '';
     achEvent('reg');
-    reward(50, '등록 완료! 검증되면 +50 더');
+    // 등록 보상은 하루 3번까지 (엉터리 등록으로 코인을 불리지 못하게)
+    const rd = ach.regDay && ach.regDay.d === todayStr() ? ach.regDay : (ach.regDay = { d: todayStr(), n: 0 });
+    rd.n++; achSave();
+    if (rd.n <= 3) reward(50, '등록 완료!'); else toast('등록 완료! (등록 보상은 하루 3번까지)');
   };
   for (const t of Store.userToilets()) { toilets.set(t.id, t); addMarker(t); }
 
@@ -251,7 +273,7 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`; };
   if (B.demo) setTimeout(() => toast('데모 모드: 채팅은 이 기기에서만 보여요 (config.js에 Supabase 키를 넣으면 공유)', 3500), 2500);
-  else B.listMessages('area:ping').then(() => setTimeout(() => toast('🌐 탐험가 서버 연결됨', 2500), 2500)).catch(e => setTimeout(() => toast('서버 연결 실패: ' + String(e.message || e).slice(0, 80), 6000), 2500));
+  else B.listMessages('area:ping').catch(e => setTimeout(() => toast('서버 연결 실패: ' + String(e.message || e).slice(0, 80), 6000), 2500));
 
   // ---- 변기 레벨 카드 ----
   async function loadToiletLevel(t) {
@@ -286,9 +308,8 @@
         const s = await B.recordVisit(sel.id, sel.name);
         const prev = statsCache.get(sel.id);
         statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
-        if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
+        if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); }
         if (prev && s.level > prev.level) { reward(20, `⚡ 변기 등급 상승! ${s.level}등급`); }
-        if (s.mine >= 10) unlock('regular');
       } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     }
   };
@@ -304,36 +325,48 @@
   // ---- 채팅 공통 ----
   let replyTo = null, chatTimer = null;
   const myId = B.me().id;
-  async function loadChat(channel, elId) {
+  async function loadChat(channel, elId, force) {
     const el = $(elId); let rows = [];
     try { rows = await B.listMessages(channel); } catch (e) { el.innerHTML = '<div class="empty">채팅을 불러오지 못했어요</div>'; return; }
+    const sig = channel + '|' + rows.length + '|' + (rows.length ? rows[rows.length - 1].id : '') + '|' + rows.reduce((n, r) => n + (r.helpful || 0), 0);
+    if (!force && el.dataset.sig === sig) return;
+    const atBottom = el.dataset.sig === undefined || !el.dataset.sig.startsWith(channel + '|') || el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    el.dataset.sig = sig;
     if (elId === 'toiletChat') $('talkCnt').textContent = rows.length || '';
     if (!rows.length) { el.innerHTML = `<div class="empty">아직 조용해요. 첫 마디를 남겨보세요 🚽</div>`; return; }
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     el.innerHTML = rows.map(r => {
       const mine = r.user_id === myId;
       const parent = r.parent && byId[r.parent];
-      const canHelp = parent && parent.user_id === myId && !mine && !r._thanked;
+      const canHelp = parent && parent.user_id === myId && !mine && !(ach.thanked || {})[r.id];
       return `<div class="msg ${mine ? 'mine' : ''} ${r.kind === 'question' ? 'question' : ''}" data-id="${r.id}">
         <div class="who"><span class="nicklink" data-uid="${esc(r.user_id)}" data-nick="${esc(r.nick)}">${r.kind === 'question' ? '❓ ' : ''}${esc(r.nick)}</span><span>${ago(r.at)}</span></div>
         ${parent ? `<div style="font-size:11px;opacity:.7;margin-bottom:3px">↳ ${esc(parent.text.slice(0, 30))}</div>` : ''}
         <div>${esc(r.text)}</div>
         ${r.helpful ? `<div class="help">👍 도움됐어요 ${r.helpful}</div>` : ''}
-        <div class="act">${!mine ? `<button data-reply="${r.id}">답하기</button>` : ''}${canHelp ? `<button data-help="${r.id}">👍 도움됐어요 (+15💰)</button>` : ''}</div>
+        <div class="act">${!mine ? `<button data-reply="${r.id}">답하기</button>` : ''}${canHelp ? `<button data-help="${r.id}">👍 도움됐어요</button>` : ''}</div>
       </div>`;
     }).join('');
-    el.scrollTop = el.scrollHeight;
+    if (atBottom || force) el.scrollTop = el.scrollHeight;
     el.querySelectorAll('.nicklink').forEach(s => s.onclick = () => openPeek(s.dataset.uid, s.dataset.nick));
     el.querySelectorAll('[data-reply]').forEach(b => b.onclick = () => { replyTo = b.dataset.reply; const inp = el.nextElementSibling.querySelector('input'); inp.placeholder = '답글 작성 중…'; inp.focus(); });
-    el.querySelectorAll('[data-help]').forEach(b => b.onclick = async () => { await B.markHelpful(b.dataset.help); b.remove(); toast('👍 답해준 탐험가에게 +15💰 전달!'); loadChat(channel, elId); });
+    el.querySelectorAll('[data-help]').forEach(b => b.onclick = async () => { (ach.thanked || (ach.thanked = {}))[b.dataset.help] = 1; achSave(); b.remove(); try { await B.markHelpful(b.dataset.help); toast('👍 고마움을 전했어요. 답해준 탐험가가 보상을 받아요'); } catch (e) { toast('전달 실패'); } loadChat(channel, elId, true); });
+    // 내 답변이 "도움됐어요"를 받았으면 보상 (답변 하나당 한 번)
+    const paid = ach.helpPaid || (ach.helpPaid = {}); let helped = 0;
+    for (const r of rows) if (r.user_id === myId && r.kind === 'answer' && r.helpful > 0 && !paid[r.id]) { paid[r.id] = 1; helped++; }
+    if (helped) { achSave(); reward(15 * helped, `내 답변이 도움이 됐대요! (${helped}건)`); }
   }
   async function send(channel, inputId, elId, toilet_id, text) {
     text = (text || $(inputId).value).trim(); if (!text) return;
     const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
     try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { console.error(e); return toast('전송 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
+    $(elId).dataset.sig = '';
     achEvent('talk');
-    reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
+    // 이야기 보상은 하루 10번까지
+    const td = ach.talkDay && ach.talkDay.d === todayStr() ? ach.talkDay : (ach.talkDay = { d: todayStr(), n: 0 });
+    td.n++; achSave();
+    if (td.n <= 10) reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
     loadChat(channel, elId);
   }
   $('toiletForm').onsubmit = e => { e.preventDefault(); if (sel) send('toilet:' + sel.id, 'toiletMsg', 'toiletChat', sel.id); };
@@ -350,7 +383,7 @@
     clearInterval(chatTimer); chatTimer = setInterval(() => { if (!$('area').classList.contains('hidden')) loadChat(areaChannel(), 'areaChat'); else clearInterval(chatTimer); }, 6000);
   };
   $('areaClose').onclick = () => { $('area').classList.add('hidden'); clearInterval(chatTimer); };
-  function closeSheets() { if (deco) endDeco(); ['sheet', 'sos', 'area', 'profile', 'help', 'peek'].forEach(id => $(id).classList.add('hidden')); }
+  function closeSheets() { if (deco) endDeco(); ['sheet', 'sos', 'area', 'profile', 'help', 'peek', 'shop'].forEach(id => $(id).classList.add('hidden')); }
 
 
   // =====================================================================
@@ -402,7 +435,82 @@
       toast(cur.has(id) ? `${RELICS[id].ic} ${RELICS[id].name} 장착 · ${RELICS[id].fx}` : `${RELICS[id].name} 해제`);
     });
   }
-  const STICKER_OK = new Set(TITLES.map(t => t.st));
+  // =====================================================================
+  // 코인 상점: 전부 꾸미기 아이템 (능력치 영향 없음)
+  // =====================================================================
+  const SHOP = {
+    bg: { name: '카드 배경', items: [
+      { id: 'bg0', name: '기본', price: 0, css: '' },
+      { id: 'bg_night', name: '밤하늘', price: 150, css: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,.35) 0 1px, transparent 2px), radial-gradient(circle at 70% 35%, rgba(255,255,255,.3) 0 1px, transparent 2px), radial-gradient(circle at 45% 75%, rgba(255,255,255,.25) 0 1px, transparent 2px), linear-gradient(160deg,#0b1026,#27306b)' },
+      { id: 'bg_onsen', name: '온천', price: 200, css: 'radial-gradient(circle at 80% 10%, rgba(255,255,255,.4), transparent 40%), linear-gradient(160deg,#2f6f7a,#8ac6c0 60%,#e8d9b5)' },
+      { id: 'bg_forest', name: '숲', price: 200, css: 'radial-gradient(circle at 15% 85%, rgba(190,255,170,.3), transparent 45%), linear-gradient(160deg,#12301f,#2f7a4a)' },
+      { id: 'bg_sunset', name: '노을', price: 250, css: 'linear-gradient(170deg,#3a1c5a,#c2456b 55%,#f6a35c)' },
+      { id: 'bg_neon', name: '네온', price: 400, css: 'radial-gradient(circle at 85% 20%, rgba(0,255,220,.45), transparent 40%), radial-gradient(circle at 10% 90%, rgba(255,0,200,.4), transparent 45%), linear-gradient(135deg,#120b2e,#2a0f4a)' },
+      { id: 'bg_gold', name: '황금 변기', price: 1500, css: 'radial-gradient(circle at 80% 15%, rgba(255,255,255,.55), transparent 35%), linear-gradient(135deg,#6b4a0f,#d9a72e 50%,#8a6414)' },
+    ] },
+    frame: { name: '아이콘 테두리', items: [
+      { id: 'fr0', name: '기본', price: 0, css: '' },
+      { id: 'fr_gold', name: '금테', price: 200, css: 'box-shadow:0 0 0 3px #ffd54a, 0 0 12px rgba(255,213,74,.7)' },
+      { id: 'fr_wave', name: '물결', price: 300, css: 'box-shadow:0 0 0 3px #7ee8fa, 0 0 0 6px rgba(126,232,250,.35), 0 0 0 9px rgba(126,232,250,.15)' },
+      { id: 'fr_rainbow', name: '무지개', price: 600, css: 'box-shadow:0 0 0 2px #ff5a5a, 0 0 0 4px #ffd54a, 0 0 0 6px #5be37d, 0 0 0 8px #5aa9ff' },
+    ] },
+    color: { name: '닉네임 색', items: [
+      { id: 'co0', name: '기본', price: 0, css: '' },
+      { id: 'co_sky', name: '하늘', price: 100, css: '#8fe3ff' },
+      { id: 'co_mint', name: '민트', price: 100, css: '#9cf0b0' },
+      { id: 'co_pink', name: '분홍', price: 100, css: '#ffa6d1' },
+      { id: 'co_gold', name: '금빛', price: 300, css: '#ffd54a' },
+    ] },
+    pack: { name: '스티커 묶음', items: [
+      { id: 'pk_sea', name: '바다 묶음', price: 250, st: ['🌊', '🫧', '🐳', '🐚'] },
+      { id: 'pk_night', name: '밤 묶음', price: 250, st: ['⭐', '🌌', '🦉', '☄️'] },
+      { id: 'pk_party', name: '축하 묶음', price: 350, st: ['🎉', '✨', '💎', '🏆'] },
+    ] },
+  };
+  const SHOP_ITEM = {}; for (const k in SHOP) for (const it of SHOP[k].items) SHOP_ITEM[it.id] = Object.assign({ kind: k }, it);
+  const DEFAULTS = { bg: 'bg0', frame: 'fr0', color: 'co0' };
+  const shopSt = () => (ach.shop || (ach.shop = { owned: {}, bg: 'bg0', frame: 'fr0', color: 'co0', bonusDay: '' }));
+  const owns = id => SHOP_ITEM[id] && (SHOP_ITEM[id].price === 0 || !!shopSt().owned[id]);
+  const cssOf = (kind, id) => (SHOP_ITEM[id] && SHOP_ITEM[id].kind === kind ? SHOP_ITEM[id].css : '') || '';
+  const packStickers = () => SHOP.pack.items.filter(p => owns(p.id)).flatMap(p => p.st);
+  const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  const DAILY_BONUS = 50;
+  let shopTab = 'bg';
+  function renderShop() {
+    const s = shopSt();
+    $('shopCoins').textContent = `💰 ${Store.coins.toLocaleString()}`;
+    const claimed = s.bonusDay === todayStr();
+    $('bonusBtn').disabled = claimed; $('bonusBtn').textContent = claimed ? '오늘의 보너스 받음 · 내일 다시' : `🎁 오늘의 보너스 받기 +${DAILY_BONUS}💰`;
+    $('shopTabs').innerHTML = Object.keys(SHOP).map(k => `<button class="${shopTab === k ? 'on' : ''}" data-k="${k}">${SHOP[k].name}</button>`).join('');
+    $('shopTabs').querySelectorAll('button').forEach(b => b.onclick = () => { shopTab = b.dataset.k; renderShop(); });
+    $('shopList').innerHTML = SHOP[shopTab].items.map(it => {
+      const has = owns(it.id), using = shopTab !== 'pack' && s[shopTab] === it.id;
+      const prev = shopTab === 'bg' ? `<span class="pv" style="background:${it.css || 'linear-gradient(135deg,#1b2a3a,#3a2d6a)'}"></span>`
+        : shopTab === 'frame' ? `<span class="pv round" style="${it.css}">🚽</span>`
+        : shopTab === 'color' ? `<span class="pv txt" style="color:${it.css || '#fff'}">가</span>`
+        : `<span class="pv pk">${it.st.join('')}</span>`;
+      const btn = shopTab === 'pack' ? (has ? '<i>보유 중</i>' : `<button data-buy="${it.id}">💰 ${it.price}</button>`)
+        : using ? '<i>적용 중</i>' : has ? `<button data-use="${it.id}">적용</button>` : `<button data-buy="${it.id}">💰 ${it.price}</button>`;
+      return `<div class="shop-item">${prev}<span class="nm">${it.name}</span>${btn}</div>`;
+    }).join('');
+    $('shopList').querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+      const it = SHOP_ITEM[b.dataset.buy];
+      if (Store.coins < it.price) return toast(`코인이 ${(it.price - Store.coins).toLocaleString()} 부족해요`);
+      if (!Store.spend(it.price)) return;
+      s.owned[it.id] = 1; if (it.kind !== 'pack') s[it.kind] = it.id;
+      achSave(); refreshHUD(); queueProfileSync(); renderShop();
+      toast(it.kind === 'pack' ? `${it.name} 구매! 스티커 꾸미기에서 쓸 수 있어요` : `${it.name} 구매하고 적용했어요`, 2800);
+    });
+    $('shopList').querySelectorAll('[data-use]').forEach(b => b.onclick = () => { const it = SHOP_ITEM[b.dataset.use]; s[it.kind] = it.id; achSave(); queueProfileSync(); renderShop(); toast(`${it.name} 적용`); });
+  }
+  function openShop() { closeSheets(); $('shop').classList.remove('hidden'); renderShop(); }
+  // 보너스: 지금은 하루 한 번 무료. 앱 출시 후에는 grantBonus를 보상형 광고 시청 완료에 연결한다
+  function grantBonus() { const s = shopSt(); if (s.bonusDay === todayStr()) return; s.bonusDay = todayStr(); achSave(); Store.earn(DAILY_BONUS, 0); refreshHUD(); renderShop(); toast(`🎁 오늘의 보너스 +${DAILY_BONUS}💰`); }
+  $('bonusBtn').onclick = grantBonus;
+  $('shopClose').onclick = () => $('shop').classList.add('hidden');
+  $('shopBtn').onclick = openShop; $('coinBtn').onclick = openShop;
+
+  const STICKER_OK = new Set(TITLES.map(t => t.st).concat(SHOP.pack.items.flatMap(p => p.st)));
   function achCheck() {
     let news = 0;
     for (const t of TITLES) if (!ach.got[t.id] && t.ok()) { ach.got[t.id] = Date.now(); if (!ach.title) ach.title = t.id; news++; const d = 2600 + news * 2300; const rl = RELICS[t.id]; setTimeout(() => toast(`🏅 칭호 획득: ${t.name} · 스티커 ${t.st}${rl ? ' · 유물 ' + rl.name : ''} 해금`, 4200), d); }
@@ -416,7 +524,7 @@
   // ---- 내 프로필 데이터 (서버에 올라가는 모양) ----
   function myProfile() {
     const m = B.me();
-    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: $('rankLabel').textContent, power: Store.xp, relics: equippedRelics(), stickers: ach.stickers, found: distinct() };
+    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: $('rankLabel').textContent, power: Store.xp, relics: equippedRelics(), bg: shopSt().bg, frame: shopSt().frame, color: shopSt().color, stickers: ach.stickers, found: distinct() };
   }
   let syncT = null;
   function queueProfileSync() { clearTimeout(syncT); syncT = setTimeout(() => B.saveProfile(myProfile()).catch(e => console.warn('profile sync', e)), 1500); }
@@ -424,9 +532,10 @@
   function cleanStickers(list) { return (Array.isArray(list) ? list : []).filter(s => s && STICKER_OK.has(s.s) && isFinite(s.x) && isFinite(s.y)).slice(0, 10).map(s => ({ s: s.s, x: Math.max(4, Math.min(96, +s.x)), y: Math.max(8, Math.min(92, +s.y)), z: Math.max(0.5, Math.min(2.5, +s.z || 1)) })); }
   function drawBoard(el, p, stickers, mine) {
     const t = TITLE[p.title];
-    el.innerHTML = `<div class="b-main"><div class="me-avatar" ${mine ? 'id="meAvatar"' : ''}>${esc(p.avatar || '🚽')}</div><div>
+    el.style.background = cssOf('bg', p.bg);
+    el.innerHTML = `<div class="b-main"><div class="me-avatar" style="${cssOf('frame', p.frame)}" ${mine ? 'id="meAvatar"' : ''}>${esc(p.avatar || '🚽')}</div><div>
         ${t ? `<div class="b-title">「${esc(t.name)}」</div>` : ''}
-        <div class="me-name" ${mine ? 'id="meName"' : ''}>${esc(p.nick || '이름 없는 탐험가')}</div>
+        <div class="me-name" style="${cssOf('color', p.color) ? 'color:' + cssOf('color', p.color) : ''}" ${mine ? 'id="meName"' : ''}>${esc(p.nick || '이름 없는 탐험가')}</div>
         <div class="me-sub">${esc(p.rank || '잠든 물방울')} · 변기력 ${(+p.power || 0).toLocaleString()}</div></div></div>`
       + cleanStickers(stickers).map((s, i) => `<span class="stk" data-i="${i}" style="left:${s.x}%;top:${s.y}%;font-size:${Math.round(30 * s.z)}px">${s.s}</span>`).join('');
   }
@@ -453,7 +562,7 @@
         el.onpointermove = move; el.onpointerup = up; el.onpointercancel = up;
       };
     });
-    const mineSt = TITLES.filter(t => ach.got[t.id]).map(t => t.st);
+    const mineSt = TITLES.filter(t => ach.got[t.id]).map(t => t.st).concat(packStickers());
     $('tray').innerHTML = mineSt.length ? mineSt.map(s => `<button data-s="${s}">${s}</button>`).join('') : '<div class="empty" style="padding:8px 0">아직 해금한 스티커가 없어요. 칭호를 얻으면 생겨요</div>';
     $('tray').querySelectorAll('button').forEach(b => b.onclick = () => { if (deco.length >= 10) return toast('스티커는 10개까지 붙일 수 있어요'); deco.push({ s: b.dataset.s, x: 50, y: 50, z: 1 }); decoSel = deco.length - 1; renderDeco(); });
   }
@@ -533,17 +642,12 @@
   }
 
   // ---- 탐험가 수첩 ----
-  const BADGES = { first: '🏁 1호 탐험가', regular: '🪑 단골 (한 변기 10회)', ten: '🔟 변기 10곳 발견', fifty: '5️⃣0️⃣ 변기 50곳 발견', helper: '🤝 동네 해결사', reporter: '📣 상태 보고 30회' };
-  const unlocked = () => { try { return JSON.parse(localStorage.getItem('ghc-badges') || '{}'); } catch (e) { return {}; } };
-  function unlock(k) { const u = unlocked(); if (u[k]) return; u[k] = 1; try { localStorage.setItem('ghc-badges', JSON.stringify(u)); } catch (e) {} toast(`🏅 뱃지 획득: ${BADGES[k]}`, 2500); }
   $('profBtn').onclick = async () => {
     closeSheets(); $('profile').classList.remove('hidden');
     renderMe();
     let v = []; try { v = await B.myVisits(); } catch (e) {}
     const total = v.reduce((a, x) => a + x.count, 0);
     $('stToilets').textContent = v.length; $('stVisits').textContent = total; $('stCoins').textContent = Store.coins.toLocaleString();
-    if (v.length >= 10) unlock('ten'); if (v.length >= 50) unlock('fifty');
-    const u = unlocked();
     achCheck();
     $('dex').innerHTML = v.length ? v.map(x => `<div><span>🚻 ${esc(x.toilet_name || x.toilet_id)}</span><small>${x.count}회 · ${ago(x.last)}</small></div>`).join('') : '<div class="empty">아직 도감이 비어 있어요. 도착 인증으로 첫 변기를 등록하세요!</div>';
   };
