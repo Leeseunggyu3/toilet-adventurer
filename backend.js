@@ -20,6 +20,8 @@
   const getAvatar = () => { try { return localStorage.getItem('ghc-avatar') || '🚽'; } catch (e) { return '🚽'; } };
   // 서버에는 "아이콘 이름" 한 덩어리로 저장한다 (스키마 변경 없이 채팅·1호 탐험가 기록에 아이콘이 따라간다)
   const fullNick = () => `${getAvatar()} ${getNick()}`;
+  // 프로필 수정용 비밀 열쇠: 이 기기에만 저장되고 서버에는 해시만 남는다 (남이 내 프로필을 덮어쓰지 못하게)
+  const secret = (() => { try { let k = localStorage.getItem('ghc-secret'); if (!k) { k = Array.from(crypto.getRandomValues(new Uint8Array(24)), x => x.toString(16).padStart(2, '0')).join(''); localStorage.setItem('ghc-secret', k); } return k; } catch (e) { return 'nosecret-' + uid + '-padpadpad'; } })();
 
   // ---------- 데모(로컬) ----------
   class LocalBackend {
@@ -41,6 +43,8 @@
     // 데모 모드에서는 보고/등록 공유가 없다 (store.js의 로컬 저장만 사용)
     async postReport() {} async recentReports() { return []; } async flagCounts() { return {}; }
     async addToilet() {} async toiletsIn() { return []; }
+    async saveProfile(data) { (this.db.profiles || (this.db.profiles = {}))[uid] = data; this._save(); }
+    async getProfile(id) { return (this.db.profiles || {})[id] || null; }
     async postFeedback(text, version) { (this.db.feedback || (this.db.feedback = [])).push({ text, version, at: new Date().toISOString() }); this._save(); }
   }
 
@@ -76,6 +80,11 @@
       const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);
       const out = {}; for (const id in m) out[id] = m[id].size; return out;
     }
+    async saveProfile(data) {
+      const r = await fetch(`${this.url}/rest/v1/rpc/save_profile`, { method: 'POST', headers: this.h, body: JSON.stringify({ p_user: uid, p_secret: secret, p_data: data }) });
+      if (!r.ok) throw new Error(`[${r.status}] ${(await r.text()).slice(0, 200)}`);
+    }
+    async getProfile(id) { const rows = await this._get(`profiles?user_id=eq.${encodeURIComponent(id)}&select=user_id,data,updated_at`); return rows[0] ? rows[0].data : null; }
     async postFeedback(text, version) { return this._post('feedback', { text, version, user_id: uid, nick: fullNick(), ua: navigator.userAgent.slice(0, 200) }); }
     async addToilet(t) { return this._post('toilets', { id: t.id, lat: t.lat, lng: t.lng, name: t.name, access: t.tags?.access || 'yes', user_id: uid, nick: fullNick() }); }
     async toiletsIn(lat, lng, d) { return this._get(`toilets?lat=gte.${lat - d}&lat=lte.${lat + d}&lng=gte.${lng - d}&lng=lte.${lng + d}&select=id,lat,lng,name,access,nick&limit=500`); }

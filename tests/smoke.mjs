@@ -25,11 +25,13 @@ await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'ap
 await page.route('**/sb/rest/v1/**', r => {
   const q = r.request(), u = new URL(q.url()), table = u.pathname.split('/rest/v1/')[1];
   if (q.method() === 'POST') {
+    if (table === 'rpc/save_profile') { const b = JSON.parse(q.postData()); (db.profiles || (db.profiles = {}))[b.p_user] = { data: b.p_data, secret: b.p_secret }; return r.fulfill({ status: 204, body: '' }); }
     if (table.startsWith('rpc/')) return r.fulfill({ status: 204, body: '' });
     const row = Object.assign({ id: 'id' + Math.random().toString(36).slice(2), at: new Date().toISOString(), helpful: 0 }, JSON.parse(q.postData() || '{}'));
     (db[table] || (db[table] = [])).push(row);
     return r.fulfill({ status: 201, body: '' });
   }
+  if (table === 'profiles') { const id = (u.searchParams.get('user_id') || '').replace('eq.', ''); const p = (db.profiles || {})[id]; return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(p ? [{ user_id: id, data: p.data }] : []) }); }
   let rows = db[table] || [];
   const ch = u.searchParams.get('channel'); if (ch) rows = rows.filter(x => 'eq.' + x.channel === ch);
   const tid = u.searchParams.get('toilet_id'); if (tid) rows = rows.filter(x => 'eq.' + x.toilet_id === tid);
@@ -95,6 +97,32 @@ try {
   check('도움말: 사용법 탭 표시', await page.isVisible('#htab-guide'));
   await page.click('.htab[data-htab=fb]'); await page.fill('#fbText', '자동 점검 의견'); await page.click('#fbSend'); await page.waitForTimeout(500);
   check('의견 보내기가 서버로 전송됨', db.feedback.length === 1 && db.feedback[0].text === '자동 점검 의견');
+
+  // ---- 칭호 · 스티커 · 프로필 조회 ----
+  await page.click('#helpClose'); await page.click('#profBtn'); await page.waitForTimeout(500);
+  const gotN = await page.locator('#titles .ttl.got').count();
+  check('칭호: 튜토리얼·첫 인증·첫 보고·등록·1호 탐험 칭호 획득', gotN >= 5, gotN + '개');
+  await page.click('#titles .ttl.got[data-t="f1"]'); await page.waitForTimeout(200);
+  check('칭호: 누르면 대표 칭호로 장착되어 카드에 표시', (await page.innerText('#myBoard')).includes('개척자'));
+  await page.click('#decoBtn'); await page.click('#tray button >> nth=0'); await page.waitForTimeout(200);
+  const sb = await page.locator('#myBoard .stk').first().boundingBox();
+  await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2); await page.mouse.down(); await page.mouse.move(sb.x + 110, sb.y - 30, { steps: 6 }); await page.mouse.up();
+  await page.click('#decoBig'); await page.click('#decoBig');
+  await page.click('#tray button >> nth=1'); await page.click('#decoDel'); // 두 번째 스티커는 붙였다가 삭제
+  await page.click('#decoOk'); await page.waitForTimeout(2200);
+  const mineP = Object.values(db.profiles || {})[0];
+  check('스티커: 붙이고 끌어서 확인하면 그 자리에 저장', !!mineP && mineP.data.stickers.length === 1 && mineP.data.stickers[0].x > 55, mineP ? JSON.stringify(mineP.data.stickers) : '프로필 없음');
+  check('스티커: 확대가 저장되고, 삭제한 스티커는 남지 않음', !!mineP && mineP.data.stickers.length === 1 && mineP.data.stickers[0].z > 1.3, mineP ? JSON.stringify(mineP.data.stickers) : '');
+  check('프로필이 서버에 대표 칭호와 함께 저장', !!mineP && mineP.data.title === 'f1' && mineP.data.titles.length >= 5);
+  await page.click('#profClose');
+  db.profiles.other1 = { data: { nick: '다른탐험가', avatar: '🦊', title: 'd10', titles: ['tut', 'd10'], rank: '소용돌이', power: 1200, style: '👣 발자국', stickers: [{ s: '🗝️', x: 80, y: 20 }], found: 12 } };
+  db.messages.push({ id: 'mx', channel: db.messages.at(-1).channel, user_id: 'other1', nick: '🦊 다른탐험가', text: '안녕하세요', kind: 'chat', helpful: 0, at: new Date().toISOString() });
+  await page.click('#areaBtn'); await page.waitForTimeout(600);
+  await page.click('#areaChat .nicklink[data-uid="other1"]'); await page.waitForTimeout(600);
+  const peek = await page.innerText('#peekBoard');
+  check('프로필 조회: 닉네임을 누르면 상대의 칭호와 경지가 보임', peek.includes('열 개의 문을 연 자') && peek.includes('다른탐험가') && peek.includes('소용돌이'), peek.replace(/\n/g, ' '));
+  check('프로필 조회: 상대의 스티커와 획득 칭호 목록 표시', (await page.locator('#peekBoard .stk').count()) === 1 && (await page.locator('#peekTitles .ttl').count()) === 2);
+  await page.click('#peekClose');
 
   check('전체 흐름 중 자바스크립트 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 300));
 } catch (e) {
