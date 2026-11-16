@@ -16,6 +16,8 @@ const Store = (() => {
     get xp() { return s.xp; },
     earn(c, xp = c) { s.coins += c; s.xp += xp; save(); },
     spend(c) { if (s.coins < c) return false; s.coins -= c; save(); return true; },
+    // 서버 지갑 사용 시: 서버가 계산한 값을 그대로 보여주기 위한 캐시
+    setWallet(coins, xp) { s.coins = coins; s.xp = xp; save(); },
 
     // 상태 보고: { open, paper, clean, queue } 각 0/1, 시각
     report(id, k, v) {

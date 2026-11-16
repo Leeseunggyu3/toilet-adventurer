@@ -8,7 +8,7 @@ const osm = { elements: [
   { type: 'node', id: 2, lat: 37.5672, lon: 126.9786, tags: { amenity: 'toilets', name: '신고된 화장실' } },
   { type: 'node', id: 3, lat: 37.5700, lon: 126.9820, tags: { amenity: 'toilets', name: '먼 화장실' } },
 ] };
-const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [] };
+const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [] };
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`); };
 
@@ -32,7 +32,20 @@ await page.route('**/sb/rest/v1/**', r => {
   if (q.method() === 'POST') {
     if (table.startsWith('accounts')) { const b = JSON.parse(q.postData()); db.account = { state: b.state, updated_at: b.updated_at }; return r.fulfill({ status: 201, body: '' }); }
     if (table === 'rpc/save_profile') { const b = JSON.parse(q.postData()); (db.profiles || (db.profiles = {}))[b.p_user] = { data: b.p_data, secret: b.p_secret }; return r.fulfill({ status: 204, body: '' }); }
+    // 서버 지갑 대역: db.wallet이 없으면 "v6 스키마를 아직 실행하지 않은 서버"처럼 404를 돌려준다
+    if (['rpc/wallet_state', 'rpc/claim_bonus', 'rpc/claim_mission', 'rpc/claim_tut', 'rpc/buy_item'].includes(table)) {
+      const w = db.wallet, b = JSON.parse(q.postData() || '{}'), json = (code, o) => r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(o) });
+      if (!w) return json(404, { code: 'PGRST202', message: 'Could not find the function' });
+      db.walletCalls.push(table);
+      if (table !== 'rpc/wallet_state' && !(b.p_secret && b.p_secret.length >= 16)) return json(400, { message: 'bad request' });
+      if (table === 'rpc/claim_bonus' && !w.bonus_today) { w.bonus_today = true; w.earned += 50; w.coins += 50; }
+      if (table === 'rpc/claim_tut' && !w.titles.includes('tut')) w.titles.push('tut');
+      if (table === 'rpc/claim_mission') { w.earned += 40; w.coins += 40; w.xp += 40; w.missions_today++; }
+      if (table === 'rpc/buy_item') { const price = { bg_night: 150, bg_gold: 1500, pk_sea: 250 }[b.p_item]; if (price === undefined) return json(400, { message: '없는 상품이에요' }); if (!w.owned.includes(b.p_item)) { if (w.coins < price) return json(400, { message: '코인이 부족해요' }); w.coins -= price; w.spent += price; w.owned.push(b.p_item); } }
+      return json(200, w);
+    }
     if (table.startsWith('rpc/')) return r.fulfill({ status: 204, body: '' });
+    if (db.wallet && table === 'reports') { db.wallet.earned += 5; db.wallet.coins += 5; db.wallet.xp += 5; }  // 서버가 보고 보상을 계산한 것처럼
     const row = Object.assign({ id: 'id' + Math.random().toString(36).slice(2), at: new Date().toISOString(), helpful: 0 }, JSON.parse(q.postData() || '{}'));
     (db[table] || (db[table] = [])).push(row);
     return r.fulfill({ status: 201, body: '' });
@@ -160,7 +173,7 @@ try {
   check('유물: 여러 개를 함께 장착', (await page.locator('#relics .ttl.on').count()) === 2 && (await page.innerText('#relicCount')).includes('장착 2'));
   await page.click('#profClose'); await page.evaluate(() => document.querySelectorAll('.tmark')[2].click()); await page.waitForTimeout(500);
   const vlabel = await page.innerText('#verifyBtn');
-  check('유물: 효과가 인증 버튼에 반영(55m, +33)', vlabel.includes('55m') && vlabel.includes('+33'), vlabel);
+  check('유물: 열쇠 꾸러미 효과가 인증 거리에 반영(55m)', vlabel.includes('55m') && vlabel.includes('+30'), vlabel);
   await page.click('#shClose');
 
   // ---- 코인 상점 · 오늘의 보너스 ----
@@ -169,11 +182,11 @@ try {
   await page.click('#coinBtn'); await page.waitForTimeout(300);
   check('상점: 화면 위 코인을 누르면 열림', await page.isVisible('#shop') && (await page.innerText('#shopCoins')).includes('500'));
   await page.click('#bonusBtn'); await page.waitForTimeout(300);
-  check('상점: 오늘의 보너스는 하루 한 번(+50)', (await page.innerText('#shopCoins')).includes('550') && await page.isDisabled('#bonusBtn'));
+  check('상점: 오늘의 보너스는 하루 한 번(+50, 장착한 유물 주인의 인장 +5)', (await page.innerText('#shopCoins')).includes('555') && await page.isDisabled('#bonusBtn'));
   await page.click('#shopList [data-buy="bg_night"]'); await page.waitForTimeout(300);
-  check('상점: 배경을 사면 코인이 줄고 바로 적용', (await page.innerText('#shopCoins')).includes('400') && (await page.innerText('#shopList')).includes('적용 중'));
+  check('상점: 배경을 사면 코인이 줄고 바로 적용', (await page.innerText('#shopCoins')).includes('405') && (await page.innerText('#shopList')).includes('적용 중'));
   await page.click('#shopList [data-buy="bg_gold"]'); await page.waitForTimeout(300);
-  check('상점: 코인이 부족하면 살 수 없음', (await page.innerText('#shopCoins')).includes('400'));
+  check('상점: 코인이 부족하면 살 수 없음', (await page.innerText('#shopCoins')).includes('405'));
   await page.click('#shopTabs button[data-k="pack"]'); await page.click('#shopList [data-buy="pk_sea"]'); await page.waitForTimeout(300);
   await page.click('#shopClose'); await page.click('#profBtn'); await page.waitForTimeout(400);
   check('상점: 산 배경이 프로필 카드에 적용', (await page.evaluate(() => document.getElementById('myBoard').style.background)).includes('gradient'));
@@ -196,6 +209,30 @@ try {
   check('계정: 기록이 다르면 어느 쪽을 쓸지 묻는 창이 뜸', await page.isVisible('#acctDlg') && (await page.innerText('#pickCloud')).includes('옛폰탐험가'));
   await page.click('#useCloud'); await page.waitForTimeout(2500);
   check('계정: 계정 기록을 불러오면 닉네임·코인·경지가 복원됨', (await page.evaluate(() => localStorage.getItem('ghc-uid'))) === 'xotherdevice1' && (await page.innerText('#coins')) === '777' && (await page.innerText('#rankLabel')) === '소용돌이', await page.innerText('#rankLabel'));
+
+  // ---- 서버 지갑: 코인·변기력·칭호·구매를 서버가 정한다 ----
+  db.wallet = { coins: 400, xp: 1200, earned: 1450, spent: 1050, titles: ['tut', 'v1', 'r1', 'k3'], owned: ['bg_night'], bonus_today: false, missions_today: 0, stats: {} };
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem('ghc-v0')); s.coins = 999999; s.xp = 999999; localStorage.setItem('ghc-v0', JSON.stringify(s)); });  // 기기 값을 조작해도
+  await page.goto(BASE + '/index.html?wallet=1'); await page.waitForTimeout(2500);
+  check('서버 지갑: 기기 저장값을 고쳐도 서버 값(400코인)으로 표시', (await page.innerText('#coins')) === '400', await page.innerText('#coins'));
+  check('서버 지갑: 변기력 1,200 → 경지 소용돌이', (await page.innerText('#rankLabel')) === '소용돌이' && (await page.innerText('#level')) === '1,200');
+  await page.click('#coinBtn'); await page.waitForTimeout(300);
+  await page.click('#shopList [data-buy="bg_gold"]'); await page.waitForTimeout(500);
+  check('서버 지갑: 코인이 모자라면 구매 불가', (await page.innerText('#shopCoins')).includes('400') && !db.wallet.owned.includes('bg_gold'));
+  await page.click('#bonusBtn'); await page.waitForTimeout(700);
+  check('서버 지갑: 오늘의 보너스는 서버에 청구(+50)', db.walletCalls.includes('rpc/claim_bonus') && (await page.innerText('#shopCoins')).includes('450') && await page.isDisabled('#bonusBtn'));
+  await page.click('#shopTabs button[data-k="pack"]'); await page.click('#shopList [data-buy="pk_sea"]'); await page.waitForTimeout(700);
+  check('서버 지갑: 구매는 서버에서 차감(450 → 200)', db.wallet.owned.includes('pk_sea') && (await page.innerText('#shopCoins')).includes('200') && (await page.innerText('#coins')) === '200');
+  await page.click('#shopTabs button[data-k="bg"]'); await page.waitForTimeout(200);
+  check('서버 지갑: 서버가 가진 것으로 인정한 배경만 보유', (await page.locator('#shopList [data-use], #shopList i').count()) === 2, await page.innerText('#shopList'));
+  await page.click('#shopClose'); await page.click('#profBtn'); await page.waitForTimeout(400);
+  const srvTitles = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('ghc-ach')).got));
+  check('서버 지갑: 서버가 인정한 칭호(k3)가 지급됨', srvTitles.includes('k3'), srvTitles.join(','));
+  await page.click('#profClose');
+  await page.evaluate(() => document.querySelectorAll('.tmark')[2].click()); await page.waitForTimeout(500);
+  await page.click('.reports button[data-k=clean][data-v="1"]'); await page.waitForTimeout(1800);
+  check('서버 지갑: 보고 보상은 서버가 계산한 만큼(+5) 반영', (await page.innerText('#coins')) === '205', await page.innerText('#coins'));
+  await page.click('#shClose');
 
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);
   const pv = await page.request.get(BASE + '/privacy.html');

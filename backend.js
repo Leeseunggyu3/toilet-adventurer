@@ -65,7 +65,20 @@
     async listMessages(channel) { return (await this._get(`messages?channel=eq.${encodeURIComponent(channel)}&order=at.desc&limit=80`)).reverse(); }
     async postMessage(m) { return this._post('messages', Object.assign({ user_id: uid, nick: fullNick() }, m)); }
     async markHelpful(id) { await fetch(`${this.url}/rest/v1/rpc/mark_helpful`, { method: 'POST', headers: this.h, body: JSON.stringify({ mid: id }) }); }
-    async recordVisit(toilet_id, toilet_name) { await this._post('visits', { toilet_id, toilet_name, user_id: uid, nick: fullNick() }); return this.toiletStats(toilet_id); }
+    async recordVisit(toilet_id, toilet_name, tz) { await this._post('visits', { toilet_id, toilet_name, user_id: uid, nick: fullNick(), tz }); return this.toiletStats(toilet_id); }
+    // ---- 서버 지갑 (schema_v6): 코인·변기력·칭호·구매를 서버가 계산한다 ----
+    async _rpc(name, body) {
+      const r = await fetch(`${this.url}/rest/v1/rpc/${name}`, { method: 'POST', headers: this.h, body: JSON.stringify(body) });
+      const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (!r.ok) { const err = new Error((j && j.message) || `[${r.status}] ${t.slice(0, 120)}`); err.status = r.status; err.missing = r.status === 404; throw err; }
+      if (!j || typeof j !== 'object') { const err = new Error('서버 응답을 읽지 못했어요'); err.missing = true; throw err; }
+      return j;
+    }
+    walletState() { return this._rpc('wallet_state', { p_user: uid }); }
+    claimBonus() { return this._rpc('claim_bonus', { p_user: uid, p_secret: secret }); }
+    claimMission(toilet) { return this._rpc('claim_mission', { p_user: uid, p_secret: secret, p_toilet: toilet }); }
+    claimTut() { return this._rpc('claim_tut', { p_user: uid, p_secret: secret }); }
+    buyItem(item) { return this._rpc('buy_item', { p_user: uid, p_secret: secret, p_item: item }); }
     async toiletStats(toilet_id) { return statsFrom(await this._get(`visits?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=user_id,nick,at&order=at.asc&limit=2000`)); }
     async myVisits() { return groupMine(await this._get(`visits?user_id=eq.${uid}&select=toilet_id,toilet_name,at&order=at.desc&limit=1000`)); }
     async postReport(toilet_id, k, v) { return this._post('reports', { toilet_id, k, v, user_id: uid, nick: fullNick() }); }

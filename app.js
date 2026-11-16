@@ -36,7 +36,30 @@
     window._lastRank = i;
     $('rankLabel').textContent = RANKS[i][1];
   }
-  function reward(c, why) { Store.earn(c); refreshHUD(); toast(`+${c}💰 ${why}`); }
+  // ===== 지갑 =====
+  // 서버 지갑(serverMode): 코인·변기력·칭호·구매를 서버가 기록에서 직접 계산한다. 기기는 결과를 보여주기만 한다.
+  // 예전 방식(기기 계산)은 서버에 v6 스키마가 없거나 데모 모드일 때만 쓴다.
+  let srv = null, serverMode = false, whyQ = [], walletT = null;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  function applyWallet(st) {
+    const prev = srv ? srv.earned : null;
+    srv = st; serverMode = true;
+    Store.setWallet(st.coins, st.xp); refreshHUD();
+    if (typeof onWallet === 'function') onWallet();
+    return prev === null ? 0 : st.earned - prev;
+  }
+  async function refreshWallet() { return applyWallet(await window.Backend.walletState()); }
+  function reward(c, why) {
+    if (!serverMode) { Store.earn(c); refreshHUD(); toast(`+${c}💰 ${why}`); return; }
+    // 서버 지갑: 기록이 서버에 닿은 뒤 다시 계산해서, 실제로 늘어난 만큼만 알려준다
+    whyQ.push(why); clearTimeout(walletT);
+    walletT = setTimeout(async () => {
+      let d = 0;
+      try { d = await refreshWallet(); if (d <= 0) { await sleep(1500); d = await refreshWallet(); } } catch (e) { console.warn('wallet', e); }
+      const w = whyQ.splice(0); if (!w.length) return;
+      toast(d > 0 ? `+${d}💰 ${w[0]}` : w[0], 2200);
+    }, 900);
+  }
 
   // ===== 화장실 데이터 (OSM Overpass, 사용자 등록) =====
   function tileKey(lat, lng) { return `${Math.floor(lat * 50)}:${Math.floor(lng * 50)}`; } // ~2km 격자
@@ -136,7 +159,7 @@
     renderStatus(t);
     navLinks(t, 'navKakao', 'navNaver', 'navGoogle');
     const vb = $('verifyBtn'); vb.disabled = !Store.canVerify(t.id);
-    vb.textContent = vb.disabled ? '✅ 오늘 이미 인증했어요' : `✅ 도착 인증 (${50 + rb('range')}m 이내) +${30 + rb('ver')}💰`;
+    vb.textContent = vb.disabled ? '✅ 오늘 이미 인증했어요' : `✅ 도착 인증 (${50 + rb('range')}m 이내) +30💰`;
     document.querySelectorAll('.reports button').forEach(b => { const f = Store.fresh(t.id, b.dataset.k, 12); b.classList.toggle('done', f !== null && String(f) === b.dataset.v); });
     map.panTo([t.lat, t.lng]);
   }
@@ -165,17 +188,18 @@
     if (Date.now() - (cd[ck] || 0) < 30 * 60000) { achSave(); return toast('보고를 고쳤어요 (같은 항목 보상은 30분마다)'); }
     cd[ck] = Date.now(); for (const key in cd) if (Date.now() - cd[key] > 2 * HOUR) delete cd[key];
     achEvent('rep');
-    reward((near ? 10 : 3) + rb('rep'), near ? '현장 보고!' : '보고 (현장이면 10💰)');
+    reward(5, near ? '현장 보고!' : '상태 보고');
     checkDaily();
   });
+  let missionDone = null; // 방금 인증으로 끝낸 미션의 변기 (서버 지갑에서는 인증 기록이 올라간 뒤 보상을 청구한다)
   $('verifyBtn').onclick = () => {
     if (!sel) return;
     if (!me) return toast('위치를 먼저 켜주세요');
     const d = dist(me[0], me[1], sel.lat, sel.lng);
     const lim = 50 + rb('range');
     if (d > lim) return toast(`${fmtD(d)} 떨어져 있어요. ${lim}m 안에서 인증!`);
-    Store.verify(sel.id); achEvent('visit', sel.id); reward(30 + rb('ver') + (new Date().getHours() < 5 ? rb('night') : 0), '도착 인증!'); checkDaily();
-    if (mission && mission.id === sel.id) { reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
+    Store.verify(sel.id); achEvent('visit', sel.id); reward(30, '도착 인증!'); checkDaily();
+    if (mission && mission.id === sel.id) { missionDone = sel.id; if (!serverMode) reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
     openSheet(sel);
   };
   $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); window.Backend.postReport(sel.id, 'flagged', 1).catch(() => {}); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
@@ -227,7 +251,7 @@
     const cands = [...toilets.values()].filter(t => { const d = dist(me[0], me[1], t.lat, t.lng); return d > 120 && d < 900 && Store.canVerify(t.id); });
     if (!cands.length) return toast('900m 안에 미션 가능한 화장실이 없어요');
     const t = cands[(Math.random() * cands.length) | 0], d = dist(me[0], me[1], t.lat, t.lng);
-    mission = { id: t.id, bonus: 40 + Math.round(d / 20) + rb('mission') };
+    mission = { id: t.id, bonus: 40 };
     $('missionText').textContent = `${t.name}까지 가서 도착 인증하면 +${mission.bonus}💰 (${fmtD(d)})`;
     $('mission').classList.remove('hidden');
     markers.get(t.id)?.setIcon(icon(t, true));
@@ -238,7 +262,7 @@
   // ===== 일일 퀘스트 =====
   function checkDaily() {
     const n = Store.dailyTick();
-    if (n === 3) reward(60 + rb('daily'), '일일 퀘스트 완료 (3회 보고)!');
+    if (n === 3) reward(60, '일일 퀘스트 완료 (3회 보고)!');
   }
 
   $('locBtn').onclick = () => locate(false);
@@ -305,11 +329,13 @@
     _verify();
     if (sel && before && !Store.canVerify(sel.id)) {
       try {
-        const s = await B.recordVisit(sel.id, sel.name);
-        const prev = statsCache.get(sel.id);
-        statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
+        const vt = sel; // 기다리는 동안 다른 변기를 열어도 이 변기 기준으로 처리
+        const prev = statsCache.get(vt.id);
+        const s = await B.recordVisit(vt.id, vt.name, serverMode ? -new Date().getTimezoneOffset() : undefined);
+        statsCache.set(vt.id, s); if (sel === vt) renderToiletLevel(s); markers.get(vt.id)?.setIcon(icon(vt));
+        if (serverMode && missionDone === vt.id) { missionDone = null; try { applyWallet(await B.claimMission(vt.id)); toast('🎯 미션 완료! +40💰', 2500); } catch (e) { toast('미션 보상 실패: ' + String(e.message || e).slice(0, 100), 6000); } }
         if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); }
-        if (prev && s.level > prev.level) { reward(20, `⚡ 변기 등급 상승! ${s.level}등급`); }
+        if (prev && s.level > prev.level) setTimeout(() => toast(`⚡ 이 변기의 등급이 올랐어요! ${s.level}등급`, 3000), 2400);
       } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     }
   };
@@ -406,18 +432,19 @@
     n1: () => ach.v.some(([, t]) => new Date(t).getHours() < 5),
     k3: () => Store.xp >= 1000,
   };
-  const TITLES = (window.GHC_TITLES || []).filter(t => COND[t.id]).map(t => Object.assign({}, t, { ok: COND[t.id] }));
+  const TITLES = (window.GHC_TITLES || []).filter(t => COND[t.id]).map(t => Object.assign({}, t, { ok: () => serverMode ? !!(srv && srv.titles.includes(t.id)) : COND[t.id]() }));
   const CATS = window.GHC_TITLE_CATS || [];
   const TITLE = Object.fromEntries(TITLES.map(t => [t.id, t]));
   // 유물: 얻기 어려운 일부 칭호에만 딸려 온다. 여러 개를 함께 장착할 수 있고, 효과는 일부러 작게 잡았다
+  // 유물 효과는 일부러 작다. 인증 거리(열쇠 꾸러미)를 빼면 전부 '오늘의 보너스'에 조금씩 더해지고, 서버가 칭호를 확인한 유물만 적용된다
   const RELIC_FX = {
     d10: { fx: '도착 인증 가능 거리 +5m', e: { range: 5 } },
-    d30: { fx: '도착 인증 코인 +3', e: { ver: 3 } },
-    r50: { fx: '상태 보고 코인 +1', e: { rep: 1 } },
-    s3:  { fx: '출동 미션 보상 +5', e: { mission: 5 } },
-    s5:  { fx: '출동 미션 보상 +10', e: { mission: 10 } },
-    n1:  { fx: '자정~새벽 5시 도착 인증 코인 +5', e: { night: 5 } },
-    k3:  { fx: '일일 퀘스트 보상 +10', e: { daily: 10 } },
+    d30: { fx: '오늘의 보너스 +5', e: { bonus: 5 } },
+    r50: { fx: '오늘의 보너스 +3', e: { bonus: 3 } },
+    s3:  { fx: '오늘의 보너스 +3', e: { bonus: 3 } },
+    s5:  { fx: '오늘의 보너스 +5', e: { bonus: 5 } },
+    n1:  { fx: '오늘의 보너스 +3', e: { bonus: 3 } },
+    k3:  { fx: '오늘의 보너스 +5', e: { bonus: 5 } },
   };
   const RELICS = {}; for (const id in RELIC_FX) if (TITLE[id]) RELICS[id] = Object.assign({ ic: '🏺', name: '이름 없는 유물' }, (window.GHC_RELICS || {})[id], RELIC_FX[id]);
   const ownedRelics = () => Object.keys(RELICS).filter(id => ach.got[id]);
@@ -479,8 +506,8 @@
   function renderShop() {
     const s = shopSt();
     $('shopCoins').textContent = `💰 ${Store.coins.toLocaleString()}`;
-    const claimed = s.bonusDay === todayStr();
-    $('bonusBtn').disabled = claimed; $('bonusBtn').textContent = claimed ? '오늘의 보너스 받음 · 내일 다시' : `🎁 오늘의 보너스 받기 +${DAILY_BONUS}💰`;
+    const claimed = serverMode ? !!(srv && srv.bonus_today) : s.bonusDay === todayStr();
+    $('bonusBtn').disabled = claimed; $('bonusBtn').textContent = claimed ? '오늘의 보너스 받음 · 내일 다시' : `🎁 오늘의 보너스 받기 +${DAILY_BONUS + rb('bonus')}💰`;
     $('shopTabs').innerHTML = Object.keys(SHOP).map(k => `<button class="${shopTab === k ? 'on' : ''}" data-k="${k}">${SHOP[k].name}</button>`).join('');
     $('shopTabs').querySelectorAll('button').forEach(b => b.onclick = () => { shopTab = b.dataset.k; renderShop(); });
     $('shopList').innerHTML = SHOP[shopTab].items.map(it => {
@@ -493,11 +520,18 @@
         : using ? '<i>적용 중</i>' : has ? `<button data-use="${it.id}">적용</button>` : `<button data-buy="${it.id}">💰 ${it.price}</button>`;
       return `<div class="shop-item">${prev}<span class="nm">${it.name}</span>${btn}</div>`;
     }).join('');
-    $('shopList').querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+    $('shopList').querySelectorAll('[data-buy]').forEach(b => b.onclick = async () => {
       const it = SHOP_ITEM[b.dataset.buy];
       if (Store.coins < it.price) return toast(`코인이 ${(it.price - Store.coins).toLocaleString()} 부족해요`);
-      if (!Store.spend(it.price)) return;
-      s.owned[it.id] = 1; if (it.kind !== 'pack') s[it.kind] = it.id;
+      if (serverMode) {
+        b.disabled = true;
+        try { applyWallet(await B.buyItem(it.id)); } catch (e) { b.disabled = false; return toast('구매 실패: ' + String(e.message || e).slice(0, 100), 5000); }
+        if (!owns(it.id)) return toast('구매가 반영되지 않았어요. 잠시 후 다시 시도해 주세요', 4000);
+      } else {
+        if (!Store.spend(it.price)) return;
+        s.owned[it.id] = 1;
+      }
+      if (it.kind !== 'pack') s[it.kind] = it.id;
       achSave(); refreshHUD(); queueProfileSync(); renderShop();
       toast(it.kind === 'pack' ? `${it.name} 구매! 스티커 꾸미기에서 쓸 수 있어요` : `${it.name} 구매하고 적용했어요`, 2800);
     });
@@ -505,7 +539,29 @@
   }
   function openShop() { closeSheets(); $('shop').classList.remove('hidden'); renderShop(); }
   // 보너스: 지금은 하루 한 번 무료. 앱 출시 후에는 grantBonus를 보상형 광고 시청 완료에 연결한다
-  function grantBonus() { const s = shopSt(); if (s.bonusDay === todayStr()) return; s.bonusDay = todayStr(); achSave(); Store.earn(DAILY_BONUS, 0); refreshHUD(); renderShop(); toast(`🎁 오늘의 보너스 +${DAILY_BONUS}💰`); }
+  async function grantBonus() {
+    const s = shopSt();
+    if (serverMode) {
+      if (srv.bonus_today) return;
+      $('bonusBtn').disabled = true;
+      try { const d = applyWallet(await B.claimBonus()); renderShop(); toast(d > 0 ? `🎁 오늘의 보너스 +${d}💰` : '오늘의 보너스는 이미 받았어요', 2500); }
+      catch (e) { renderShop(); toast('보너스 실패: ' + String(e.message || e).slice(0, 100), 5000); }
+      return;
+    }
+    if (s.bonusDay === todayStr()) return;
+    const amt = DAILY_BONUS + rb('bonus');
+    s.bonusDay = todayStr(); achSave(); Store.earn(amt, 0); refreshHUD(); renderShop(); toast(`🎁 오늘의 보너스 +${amt}💰`);
+  }
+  // 서버 지갑 값이 새로 들어올 때: 보유 상품과 칭호를 서버 기준으로 맞춘다
+  function onWallet() {
+    const s = shopSt();
+    s.owned = Object.fromEntries((srv.owned || []).map(id => [id, 1]));
+    for (const k of ['bg', 'frame', 'color']) if (!owns(s[k])) s[k] = DEFAULTS[k];  // 서버가 모르는 상품은 적용 해제
+    achSave(); achCheck();
+    if (ach.tut && !srv.titles.includes('tut') && !onWallet.tutSent) { onWallet.tutSent = true; B.claimTut().then(applyWallet).catch(() => {}); }
+    if (!$('shop').classList.contains('hidden')) renderShop();
+    queueProfileSync();
+  }
   $('bonusBtn').onclick = grantBonus;
   $('shopClose').onclick = () => $('shop').classList.add('hidden');
   $('shopBtn').onclick = openShop; $('coinBtn').onclick = openShop;
@@ -580,7 +636,7 @@
     closeSheets(); $('peek').classList.remove('hidden');
     $('peekMeta').textContent = '불러오는 중…'; $('peekBoard').innerHTML = ''; $('peekTitles').innerHTML = ''; $('peekRelics').innerHTML = '';
     let p = null; try { p = await B.getProfile(userId); } catch (e) {}
-    if (!p) { $('peekMeta').textContent = '아직 프로필 카드를 만들지 않은 탐험가예요'; drawBoard($('peekBoard'), { nick: fallbackNick, avatar: '🚽' }, [], false); $('peekTitles').innerHTML = '<div class="empty">공개된 칭호가 없어요</div>'; return; }
+    if (!p || !p.nick) { $('peekMeta').textContent = '아직 프로필 카드를 만들지 않은 탐험가예요'; drawBoard($('peekBoard'), { nick: fallbackNick, avatar: '🚽' }, [], false); $('peekTitles').innerHTML = '<div class="empty">공개된 칭호가 없어요</div>'; return; }
     $('peekMeta').textContent = `발견한 변기 ${+p.found || 0}곳 · 칭호 ${(p.titles || []).length}개`;
     drawBoard($('peekBoard'), p, p.stickers, false);
     drawTitles($('peekTitles'), p.titles || [], p.title, false);
@@ -589,6 +645,8 @@
   }
   $('peekClose').onclick = () => $('peek').classList.add('hidden');
   setTimeout(achCheck, 3500); // 이미 조건을 채운 칭호는 시작할 때 바로 지급
+  if (!B.demo && B.walletState) refreshWallet().catch(e => { if (!e.missing) console.warn('wallet', e); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && serverMode) refreshWallet().catch(() => {}); });
 
   // =====================================================================
   // 계정: 게스트 / 구글 로그인
@@ -703,7 +761,7 @@
   $('helpBtn').onclick = () => openHelp('tut');
   $('helpClose').onclick = closeHelp;
   $('tutPrev').onclick = () => { if (tutI > 0) { tutI--; renderTut(); } };
-  $('tutNext').onclick = () => { if (tutI < TUT.length - 1) { tutI++; renderTut(); } else { closeHelp(); achEvent('tut'); } };
+  $('tutNext').onclick = () => { if (tutI < TUT.length - 1) { tutI++; renderTut(); } else { closeHelp(); achEvent('tut'); if (serverMode) B.claimTut().then(applyWallet).catch(() => {}); } };
   // 의견 보내기
   const VERSION = '__VERSION__';
   $('verLabel').textContent = VERSION.startsWith('__') ? '개발용' : VERSION;

@@ -21,8 +21,9 @@
 | `backend.js`, `store.js`, `auth.js` | 서버 통신, 기기 저장, 구글 로그인과 계정 저장 |
 | `ads.js` | 배너 광고 자리 (기본 꺼짐) |
 | `privacy.html` | 개인정보처리방침 |
-| `supabase/*.sql` | 서버 테이블 정의 (v1~v5 순서대로 실행) |
-| `tests/smoke.mjs` | 배포 전 자동 점검. 실패하면 배포되지 않음 |
+| `supabase/*.sql` | 서버 테이블과 보상 규칙 (v1~v6 순서대로 실행). **코인·변기력·칭호·구매는 `schema_v6_wallet.sql`의 `wallet_state`가 계산** |
+| `tests/smoke.mjs` | 화면 자동 점검 (가짜 서버). 실패하면 배포되지 않음 |
+| `tests/sql.test.mjs` | 서버 SQL 점검 (진짜 Postgres에 스키마를 올려 보상 규칙 확인) |
 
 ## 로드맵
 - [x] 채팅, 변기 등급, 상태 보고·등록 공유, 도배 방지
