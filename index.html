@@ -80,6 +80,15 @@
     <button data-k="queue" data-v="1">🧍🧍 줄 김</button>
   </div>
   <button class="verify" id="verifyBtn">✅ 도착 인증 (50m 이내) +30💰</button>
+  <div class="flagnote hidden" id="flagNote"></div>
+  <div class="report-title">📷 사진 증거</div>
+  <div class="photos" id="photos"></div>
+  <div class="row photo-row">
+    <button id="photoYes">📷 있어요 사진</button>
+    <button id="photoNo">📷 없어졌어요 사진</button>
+  </div>
+  <input type="file" id="photoFile" accept="image/*" capture="environment" hidden>
+  <p class="tiny">입구나 표지판처럼 <b>바깥에서 보이는 모습만</b> 찍어주세요. 사람이 나오거나 화장실 안쪽을 찍은 사진은 올리지 마세요. 사진에 담긴 위치 정보는 자동으로 지워집니다. 도착 인증을 한 번 이상 한 탐험가만 올릴 수 있어요.</p>
   <button class="flag" id="flagBtn">⚠️ 여기 화장실 없음 신고</button>
   </div>
   <div id="tab-talk" class="hidden">
@@ -250,6 +259,7 @@
       <details><summary>🏅 칭호 · 스티커 · 프로필</summary><p>조건을 채우면 칭호를 얻습니다(튜토리얼 완료, 변기 발견 수, 상태 보고 횟수, 정해진 시간 안에 여러 변기 인증 등). 🧭 수첩에서 획득한 칭호를 눌러 대표 칭호로 장착하세요.</p><p>칭호마다 스티커가 하나씩 해금됩니다. "스티커로 꾸미기"를 눌러 스티커를 붙이고, 끌어서 자리를 잡고, 크게·작게로 크기를 바꾸거나 삭제할 수 있습니다. 확인을 누르면 프로필 카드에 고정됩니다.</p><p>채팅에서 다른 탐험가의 닉네임을 누르면 그 사람의 프로필 카드와 칭호를 볼 수 있습니다.</p></details>
       <details><summary>🔐 게스트와 구글 로그인</summary><p>가입 없이 바로 쓰면 게스트입니다. 기록은 이 기기에만 저장돼서, 브라우저 데이터를 지우거나 기기를 바꾸면 사라집니다.</p><p>🧭 수첩에서 구글로 로그인하면 변기력, 칭호, 스티커, 코인, 닉네임이 계정에 저장됩니다. 다른 기기에서 같은 구글 계정으로 로그인하면 그대로 이어집니다. 로그인해도 다른 탐험가에게 이메일은 보이지 않습니다.</p></details>
       <details><summary>🛒 코인과 상점</summary><p>코인은 상태 보고, 도착 인증, 등록, 이야기, 미션으로 모읍니다. 화면 위 코인을 누르거나 🧭 수첩의 "코인 상점"에서 프로필 카드 배경, 아이콘 테두리, 닉네임 색, 스티커 묶음을 살 수 있습니다. 전부 꾸미기용이라 능력치에는 영향이 없습니다. 상점에서 하루 한 번 보너스 코인을 받을 수 있어요. 코인과 변기력, 칭호는 서버가 기록을 보고 계산합니다.</p></details>
+      <details><summary>📷 없음 신고와 사진 증거</summary><p>화장실이 없어졌으면 "여기 화장실 없음 신고"나 "없어졌어요 사진"을 남겨주세요. 도착 인증을 해본 탐험가 2명 이상이 없다고 하면 변기탐지 후보에서 빠집니다.</p><p>잘못된 신고라면 그 화장실에 가서 도착 인증을 하거나 "있어요 사진"을 올리면 그 전의 신고가 무효가 되고 다시 안내됩니다. 부적절한 사진은 🚩로 신고하면 2명 이상 신고 시 숨겨집니다.</p></details>
       <details><summary>🛠️ 위치가 안 잡혀요</summary><p>인스타·카톡 등 앱 안에서 열린 브라우저는 위치를 쓸 수 없습니다. 크롬이나 사파리로 직접 열어주세요. 그래도 안 되면 주소창 자물쇠 → 권한 → 위치를 "허용"으로 바꾸고 📍를 누르세요.</p></details>
     </div>
   </div>
@@ -294,6 +304,8 @@
     <p class="tiny">고르지 않은 쪽 기록은 사라집니다.</p>
   </div>
 </div>
+
+<div id="photoView" class="modal hidden"><div class="pv-wrap"><img id="photoBig" alt="사진 증거"><div class="pv-meta" id="photoMeta"></div><div class="row"><button id="photoReport">🚩 부적절한 사진 신고</button><button id="photoClose" class="primary">닫기</button></div></div></div>
 
 <div id="toast"></div>
 <div id="attrib">지도 © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> 기여자 · 화장실 데이터: OSM(ODbL) + 사용자 제보</div>

@@ -101,7 +101,7 @@
     if (tg.fee === 'yes') bits.push('유료'); if (tg.wheelchair === 'yes') bits.push('♿ 휠체어'); if (tg.opening_hours) bits.push(tg.opening_hours);
     if (tg.unisex === 'yes') bits.push('남녀공용'); if (tg.changing_table === 'yes') bits.push('기저귀교환대');
     if (t.src === 'user') bits.push(t.by ? `${t.by} 님이 등록` : '사용자 등록');
-    if (t.flagged) bits.push('⚠️ 없다는 신고 있음');
+    if (t.flags) bits.push(`⚠️ 없다는 신고 ${t.flags}건`);
     return bits.join(' · ');
   }
 
@@ -156,7 +156,7 @@
     $('shName').textContent = t.name;
     const d = me ? dist(me[0], me[1], t.lat, t.lng) : null;
     $('shMeta').textContent = [d != null ? `${fmtD(d)} · 도보 ${walkMin(d)}분` : '', describe(t)].filter(Boolean).join(' · ');
-    renderStatus(t);
+    renderStatus(t); renderFlagNote(t); loadPhotos(t);
     navLinks(t, 'navKakao', 'navNaver', 'navGoogle');
     const vb = $('verifyBtn'); vb.disabled = !Store.canVerify(t.id);
     vb.textContent = vb.disabled ? '✅ 오늘 이미 인증했어요' : `✅ 도착 인증 (${50 + rb('range')}m 이내) +30💰`;
@@ -202,7 +202,73 @@
     if (mission && mission.id === sel.id) { missionDone = sel.id; if (!serverMode) reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
     openSheet(sel);
   };
-  $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); window.Backend.postReport(sel.id, 'flagged', 1).catch(() => {}); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
+  $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); const t = sel; window.Backend.postReport(t.id, 'flagged', 1).then(() => syncShared(true)).catch(() => {}); toast('신고 접수. 도착 인증을 해본 탐험가 2명 이상이 신고하면 변기탐지에서 빠져요', 3500); };
+
+  // ===== 없음 신고 안내 · 사진 증거 =====
+  function renderFlagNote(t) {
+    const el = $('flagNote');
+    if (!t.flags) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.textContent = t.flagged
+      ? `⚠️ 탐험가 ${t.flags}명이 "여기 화장실이 없다"고 해서 변기탐지에서 빠져 있어요. 실제로 있다면 도착 인증이나 "있어요 사진"으로 알려주세요. 바로 다시 안내돼요.`
+      : `⚠️ "여기 화장실이 없다"는 신고가 ${t.flags}건 있어요. 지금 있다면 도착 인증이나 "있어요 사진"으로 알려주세요.`;
+  }
+  let photoKind = 'exists', photoRows = [];
+  async function loadPhotos(t) {
+    const el = $('photos'); el.innerHTML = '';
+    let rows = []; try { rows = await window.Backend.listPhotos(t.id); } catch (e) {}
+    if (sel !== t) return;
+    photoRows = rows;
+    el.innerHTML = rows.length
+      ? rows.map((p, i) => `<button class="ph ${p.kind === 'gone' ? 'gone' : ''}" data-i="${i}"><img src="${p.data.startsWith('data:image/jpeg;base64,') ? p.data : ''}" alt="" loading="lazy"><span>${p.kind === 'gone' ? '없어짐' : '있음'}</span></button>`).join('')
+      : '<div class="none">아직 사진이 없어요</div>';
+    el.querySelectorAll('.ph').forEach(b => b.onclick = () => openPhoto(photoRows[+b.dataset.i]));
+  }
+  let viewing = null;
+  function openPhoto(p) {
+    viewing = p; $('photoBig').src = p.data;
+    $('photoMeta').textContent = `${p.kind === 'gone' ? '없어졌어요' : '있어요'} · ${p.nick || '탐험가'} · ${ago(p.at)}`;
+    $('photoReport').classList.toggle('hidden', p.user_id === B.me().id);
+    $('photoView').classList.remove('hidden');
+  }
+  $('photoClose').onclick = () => { $('photoView').classList.add('hidden'); $('photoBig').src = ''; viewing = null; };
+  $('photoReport').onclick = async () => {
+    if (!viewing) return;
+    try { const hid = await window.Backend.reportPhoto(viewing.id); toast(hid ? '신고가 모여 사진을 숨겼어요' : '신고했어요. 2명 이상 신고하면 숨겨져요', 3000); }
+    catch (e) { toast('신고 실패: ' + String(e.message || e).slice(0, 120), 5000); }
+    $('photoClose').onclick(); if (sel) loadPhotos(sel);
+  };
+  // 사진 줄이기: 긴 변 720px JPEG로 다시 그린다. 다시 그리면 사진 속 위치 정보(EXIF)가 사라진다
+  async function shrink(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('사진을 읽지 못했어요')); im.src = url; });
+      for (const [max, qlt] of [[720, .62], [600, .5], [480, .42]]) {
+        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+        const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        const d = cv.toDataURL('image/jpeg', qlt);
+        if (d.length <= 190000) return d;
+      }
+      throw new Error('사진이 너무 커요');
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function pickPhoto(kind) {
+    if (!sel) return;
+    if (me && dist(me[0], me[1], sel.lat, sel.lng) > 200) return toast('사진은 그 화장실 근처(200m 안)에서 올릴 수 있어요');
+    photoKind = kind; $('photoFile').value = ''; $('photoFile').click();
+  }
+  $('photoYes').onclick = () => pickPhoto('exists');
+  $('photoNo').onclick = () => pickPhoto('gone');
+  $('photoFile').onchange = async () => {
+    const f = $('photoFile').files[0], t = sel; if (!f || !t) return;
+    let data; try { data = await shrink(f); } catch (e) { return toast(String(e.message || e)); }
+    try {
+      await window.Backend.postPhoto(t.id, photoKind, data);
+      toast(photoKind === 'exists' ? '📷 고마워요! 이 화장실이 있다는 증거가 올라갔어요' : '📷 고마워요! 없어졌다는 증거가 올라갔어요', 3000);
+      loadPhotos(t); syncShared(true);
+    } catch (e) { toast('사진 올리기 실패: ' + String(e.message || e).slice(0, 140), 6000); }
+  };
 
   // ===== 변기탐지 =====
   $('sosBtn').onclick = () => {
@@ -268,22 +334,25 @@
   $('locBtn').onclick = () => locate(false);
 
   // ===== 서버 공유: 상태 보고 · 신고 · 사용자 등록 화장실 =====
-  const FLAG_HIDE = 2; // 서로 다른 탐험가 2명 이상이 "없음" 신고하면 변기탐지 후보에서 제외
-  let syncBusy = false, lastSync = 0;
+  let syncBusy = false, lastSync = 0, syncAgain = false;
   async function syncShared(force) {
     const SB = window.Backend;
-    if (SB.demo || syncBusy || (!force && Date.now() - lastSync < 20000)) return;
+    if (SB.demo) return;
+    if (syncBusy) { if (force) syncAgain = true; return; }  // 진행 중이면 끝난 뒤 한 번 더
+    if (!force && Date.now() - lastSync < 20000) return;
     syncBusy = true; lastSync = Date.now();
     try {
       const c = map.getCenter();
-      const [reps, flags, ut] = await Promise.all([SB.recentReports(), SB.flagCounts(), SB.toiletsIn(c.lat, c.lng, 0.05)]);
+      const [reps, flags, ut] = await Promise.all([SB.recentReports(), SB.toiletFlags(), SB.toiletsIn(c.lat, c.lng, 0.05)]);
       for (const r of ut) if (!toilets.has(r.id)) { const t = { id: r.id, lat: r.lat, lng: r.lng, name: r.name, src: 'user', by: r.nick, tags: { access: r.access } }; toilets.set(t.id, t); addMarker(t); }
-      for (const t of toilets.values()) t.flagged = (flags[t.id] || 0) >= FLAG_HIDE;
+      for (const t of toilets.values()) { const f = flags[t.id]; t.flags = f ? f.flags : 0; t.flagged = !!(f && f.hidden); }
+      if (sel && !$('sheet').classList.contains('hidden')) renderFlagNote(sel);
       const changed = Store.mergeRemote(reps);
       if (changed || ut.length) restyle();
       if (changed && sel && !$('sheet').classList.contains('hidden')) renderStatus(sel);
     } catch (e) { console.warn('sync failed', e); }
     syncBusy = false;
+    if (syncAgain) { syncAgain = false; syncShared(true); }
   }
   map.on('moveend', () => syncShared(false));
   setInterval(() => { if (!document.hidden) syncShared(false); }, 45000);
@@ -335,6 +404,7 @@
         statsCache.set(vt.id, s); if (sel === vt) renderToiletLevel(s); markers.get(vt.id)?.setIcon(icon(vt));
         if (serverMode && missionDone === vt.id) { missionDone = null; try { applyWallet(await B.claimMission(vt.id)); toast('🎯 미션 완료! +40💰', 2500); } catch (e) { toast('미션 보상 실패: ' + String(e.message || e).slice(0, 100), 6000); } }
         if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); }
+        syncShared(true);
         if (prev && s.level > prev.level) setTimeout(() => toast(`⚡ 이 변기의 등급이 올랐어요! ${s.level}등급`, 3000), 2400);
       } catch (e) {
         console.error(e);
@@ -414,7 +484,7 @@
     clearInterval(chatTimer); chatTimer = setInterval(() => { if (!$('area').classList.contains('hidden')) loadChat(areaChannel(), 'areaChat'); else clearInterval(chatTimer); }, 6000);
   };
   $('areaClose').onclick = () => { $('area').classList.add('hidden'); clearInterval(chatTimer); };
-  function closeSheets() { if (deco) endDeco(); ['sheet', 'sos', 'area', 'profile', 'help', 'peek', 'shop'].forEach(id => $(id).classList.add('hidden')); }
+  function closeSheets() { if (deco) endDeco(); ['sheet', 'sos', 'area', 'profile', 'help', 'peek', 'shop', 'photoView'].forEach(id => $(id).classList.add('hidden')); }
 
 
   // =====================================================================

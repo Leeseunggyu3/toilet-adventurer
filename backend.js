@@ -42,6 +42,10 @@
     async myVisits() { return groupMine(this.db.visits.filter(v => v.user_id === uid)); }
     // 데모 모드에서는 보고/등록 공유가 없다 (store.js의 로컬 저장만 사용)
     async postReport() {} async recentReports() { return []; } async flagCounts() { return {}; }
+    async toiletFlags() { return {}; }
+    async listPhotos(toilet_id) { return (this.db.photos || []).filter(p => p.toilet_id === toilet_id).slice(-6).reverse(); }
+    async postPhoto(toilet_id, kind, data) { (this.db.photos || (this.db.photos = [])).push({ id: Date.now(), toilet_id, kind, data, user_id: uid, nick: fullNick(), at: new Date().toISOString() }); this._save(); }
+    async reportPhoto() { return false; }
     async addToilet() {} async toiletsIn() { return []; }
     async saveProfile(data) { (this.db.profiles || (this.db.profiles = {}))[uid] = data; this._save(); }
     async getProfile(id) { return (this.db.profiles || {})[id] || null; }
@@ -108,6 +112,31 @@
       return this._get(`reports?k=neq.flagged&at=gte.${encodeURIComponent(since)}&select=toilet_id,k,v,at&order=at.desc&limit=1000`);
     }
     // "화장실 없음" 신고: 변기별 서로 다른 신고자 수
+    // "없음" 신고 집계 (v8): 서버가 믿을 만한 신고만 세고, 반박 증거가 생기면 무효로 처리한다. v8이 없으면 예전 방식으로 센다
+    async toiletFlags() {
+      if (this.flagsV8 !== false) {
+        const r = await fetch(`${this.url}/rest/v1/rpc/toilet_flags`, { method: 'POST', headers: this.h, body: '{}' });
+        if (r.ok) { this.flagsV8 = true; const out = {}; for (const x of await r.json()) out[x.toilet_id] = { flags: x.flags, hidden: x.hidden }; return out; }
+        if (r.status !== 404) throw new Error(`[${r.status}] 신고 집계 실패`);
+        this.flagsV8 = false;
+      }
+      const c = await this.flagCounts(), out = {};
+      for (const id in c) out[id] = { flags: c[id], hidden: c[id] >= 2 };
+      return out;
+    }
+    async listPhotos(toilet_id) {
+      try { return await this._get(`photos?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=id,toilet_id,kind,data,user_id,nick,at&order=at.desc&limit=6`); }
+      catch (e) { return []; }  // v8 전에는 사진 기능 없음
+    }
+    async postPhoto(toilet_id, kind, data) { return this._rpcSigned('post_photo', { p_toilet: toilet_id, p_kind: kind, p_data: data, p_nick: fullNick() }); }
+    async reportPhoto(id) { return this._rpcSigned('report_photo', { p_photo: id }); }
+    async _rpcSigned(name, body) {
+      const r = await fetch(`${this.url}/rest/v1/rpc/${name}`, { method: 'POST', headers: this.h, body: JSON.stringify(Object.assign({ p_user: uid, p_secret: secret }, body)) });
+      const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (e) {}
+      if (r.status === 404) throw new Error('사진 기능이 아직 서버에 준비되지 않았어요');
+      if (!r.ok) throw new Error(String((j && j.message) || t).slice(0, 160));
+      return j;
+    }
     async flagCounts() {
       const rows = await this._get(`reports?k=eq.flagged&select=toilet_id,user_id&limit=2000`);
       const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);

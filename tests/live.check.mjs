@@ -53,6 +53,12 @@ if (v6) {
   else if (code === '23514') line('⏳', '테이블 직접 쓰기 아직 열려 있음', 'v7 실행 전 상태 (정상)');
   else line('⚠️', '테이블 직접 쓰기 상태 불명', `[${r.status}] ${r.t.slice(0, 120)}`); }
 
+// 3-2. 없음 신고 집계와 사진 증거 (v8)
+{ const r = await rpc('toilet_flags', {});
+  if (r.status === 200 && Array.isArray(r.j)) line('✅', '없음 신고 집계·사진 증거(v8) 설치됨', `신고가 걸린 변기 ${r.j.length}곳, 숨김 ${r.j.filter(x => x.hidden).length}곳`);
+  else if (r.status === 404) line('⏳', '없음 신고 집계·사진 증거(v8) 아직 실행 전', 'schema_v8_evidence.sql을 실행하면 켜짐');
+  else line('❌', '없음 신고 집계(v8) 오류', `[${r.status}] ${r.t.slice(0, 160)}`); }
+
 // 4. 구글 로그인 설정
 { const r = await call('/auth/v1/settings');
   if (r.status === 200 && r.j && r.j.external) line(r.j.external.google ? '✅' : '⚠️', '구글 로그인 ' + (r.j.external.google ? '켜짐' : '꺼짐'));

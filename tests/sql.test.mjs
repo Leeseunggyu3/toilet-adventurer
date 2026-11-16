@@ -16,7 +16,7 @@ await db.exec(`
   create schema auth; create table auth.users (id uuid primary key);
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
 `);
-for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql']) {
+for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql', 'schema_v8_evidence.sql']) {
   const sql = readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
   try { await db.exec(sql); check(`${f} 실행`, true); } catch (e) { check(`${f} 실행`, false, e.message); }
 }
@@ -160,15 +160,62 @@ await db.query(`update visits set at = at - interval '3 hours' where user_id=$1`
 await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'uabc123', '등록한 곳', 'n', 540, 37.0, 127.0]);
 check('인증: 사용자가 등록한 화장실은 서버에 있는 좌표를 사용(기기가 보낸 좌표 무시)', (await q(`select lat from visits where user_id=$1 and toilet_id='uabc123'`, [P]))[0].lat === 35);
 check('거리 계산: 서울~부산 약 325km', Math.abs((await q('select dist_m(37.5665,126.9780,35.1796,129.0756) d'))[0].d - 325000) < 5000);
-// 새 탐험가 남발 제한 (네트워크당 하루 500명)
-await db.query(`select set_config('request.headers', '{"x-forwarded-for":"203.0.113.9, 10.0.0.1"}', false)`);
-let lastErr = null, made = 0;
-for (let i = 0; i < 502; i++) { const e = await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_' + i, 'sybil-secret-sybil-secret-' + i, 'osm1', 'open', 1]); if (e) { lastErr = e; break; } made++; }
-check('같은 네트워크에서 하루 500명까지만 새 탐험가 생성', made === 500 && (lastErr || '').includes('새 탐험가'), `${made}명 생성 후: ${lastErr}`);
-check('이미 있는 탐험가는 제한과 무관하게 계속 사용 가능', (await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_0', 'sybil-secret-sybil-secret-0', 'osm2', 'open', 1])) === null);
-check('IP 주소 원문은 저장하지 않음(해시만)', (await q(`select ip_hash from key_births limit 1`))[0].ip_hash.length === 64 && (await q(`select count(*)::int n from key_births where ip_hash like '%203.0.113%'`))[0].n === 0);
-await db.query(`select set_config('request.headers', '', false)`);
-check('헤더가 없는 환경에서도 오류 없이 동작', (await fails('select post_report($1,$2,$3,$4,$5)', ['nohdr_user', 'nohdr-secret-nohdr-secret', 'osm1', 'open', 1])) === null);
+// 새 탐험가는 몇 명이든 만들 수 있다
+let made = 0; for (let i = 0; i < 120; i++) { if ((await fails('select post_report($1,$2,$3,$4,$5)', ['many_' + i, 'many-secret-many-secret-' + i, 'osm1', 'open', 1])) === null) made++; }
+check('새 탐험가 수는 제한하지 않음 (120명 모두 가능)', made === 120, made);
+check('예전 네트워크 집계표는 남아 있지 않음', (await q(`select to_regclass('public.key_births') r`))[0].r === null);
+
+// ================= v8: 없음 신고와 사진 증거 =================
+try { await db.exec(readFileSync(new URL('../supabase/schema_v8_evidence.sql', import.meta.url), 'utf8')); check('v8을 두 번 실행해도 안전', true); } catch (e) { check('v8을 두 번 실행해도 안전', false, e.message); }
+const flagsOf = async id => (await q('select * from toilet_flags() where toilet_id = $1', [id]))[0] || { flags: 0, hidden: false };
+const IMG = 'data:image/jpeg;base64,' + 'A'.repeat(500);
+// 탐험가 셋: 둘은 도착 인증 경험 있음(믿을 만함), 하나는 갓 만든 계정
+const TA = 'trust_a', TB = 'trust_b', NW = 'newbie', KA = 'ta-secret-ta-secret-ta', KB = 'tb-secret-tb-secret-tb', KN = 'nw-secret-nw-secret-nw';
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [TA, KA, 'home_a', 'a', 'a', 540, 36.0, 128.0]);
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [TB, KB, 'home_b', 'b', 'b', 540, 36.0, 128.0]);
+await db.query(`update visits set at = now() - interval '1 day' where user_id in ($1,$2)`, [TA, TB]);
+await db.query('select post_report($1,$2,$3,$4,$5)', [NW, KN, 'X', 'flagged', 1]);
+await db.query('select post_report($1,$2,$3,$4,$5)', ['newbie2', 'nw2-secret-nw2-secret', 'X', 'flagged', 1]);
+check('신고: 도착 인증을 안 해본 계정 둘의 신고로는 숨겨지지 않음', (await flagsOf('X')).hidden === false && (await flagsOf('X')).flags === 0, JSON.stringify(await flagsOf('X')));
+await db.query('select post_report($1,$2,$3,$4,$5)', [TA, KA, 'X', 'flagged', 1]);
+check('신고: 믿을 만한 탐험가 1명이면 표시만(숨기지 않음)', (await flagsOf('X')).flags === 1 && (await flagsOf('X')).hidden === false);
+await db.query('select post_report($1,$2,$3,$4,$5)', [TA, KA, 'X', 'flagged', 1]);
+check('신고: 같은 사람이 여러 번 신고해도 1건', (await flagsOf('X')).flags === 1);
+await db.query('select post_report($1,$2,$3,$4,$5)', [TB, KB, 'X', 'flagged', 1]);
+check('신고: 믿을 만한 탐험가 2명이면 숨김', (await flagsOf('X')).hidden === true);
+// 반박: "있어요" 사진
+check('사진: 도착 인증을 안 해본 계정은 올릴 수 없음', ((await fails('select post_photo($1,$2,$3,$4,$5)', [NW, KN, 'X', 'exists', IMG])) || '').includes('도착 인증'));
+check('사진: 형식이 아니면 거절', !!(await fails('select post_photo($1,$2,$3,$4,$5)', [TA, KA, 'X', 'exists', 'data:image/png;base64,AAA'])));
+check('사진: 너무 크면 거절', !!(await fails('select post_photo($1,$2,$3,$4,$5)', [TA, KA, 'X', 'exists', 'data:image/jpeg;base64,' + 'A'.repeat(200001)])));
+const P3 = 'trust_c', K3 = 'tc-secret-tc-secret-tc';
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P3, K3, 'home_c', 'c', 'c', 540, 36.0, 128.0]);
+await db.query(`update visits set at = now() - interval '1 day' where user_id = $1`, [P3]);
+const pid = (await q('select post_photo($1,$2,$3,$4,$5,$6) id', [P3, K3, 'X', 'exists', IMG, '📷 c']))[0].id;
+check('반박: "있어요" 사진이 올라오면 그 전 신고는 무효', (await flagsOf('X')).flags === 0 && (await flagsOf('X')).hidden === false, JSON.stringify(await flagsOf('X')));
+check('사진: 누구나 볼 수 있음', (await q('select count(*)::int n from photos where toilet_id = $1 and not hidden', ['X']))[0].n === 1);
+// 부적절 사진 신고
+check('사진 신고: 내 사진은 신고 불가', ((await fails('select report_photo($1,$2,$3)', [P3, K3, pid])) || '').includes('내 사진'));
+check('사진 신고: 도착 인증 안 해본 계정은 신고 불가', !!(await fails('select report_photo($1,$2,$3)', [NW, KN, pid])));
+await db.query('select report_photo($1,$2,$3)', [TA, KA, pid]); await db.query('select report_photo($1,$2,$3)', [TA, KA, pid]);
+check('사진 신고: 한 명이 여러 번 눌러도 숨겨지지 않음', (await q('select hidden from photos where id=$1', [pid]))[0].hidden === false);
+await db.query('select report_photo($1,$2,$3)', [TB, KB, pid]);
+check('사진 신고: 2명이 신고하면 숨김', (await q('select hidden from photos where id=$1', [pid]))[0].hidden === true);
+check('사진 신고: 숨겨진 사진이 반박 증거에서 빠지면서 신고가 다시 유효', (await flagsOf('X')).hidden === true);
+// 반박: 도착 인증
+await db.query(`update visits set at = now() - interval '3 hours' where user_id = $1`, [P3]);
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P3, K3, 'X', 'X', 'c', 540, 36.0, 128.0]);
+check('반박: 신고 뒤에 누가 도착 인증을 하면 신고 무효', (await flagsOf('X')).flags === 0);
+// "없어졌어요" 사진은 신고로 셈
+await db.query('select post_photo($1,$2,$3,$4,$5)', [TA, KA, 'Y', 'gone', IMG]);
+await db.query('select post_report($1,$2,$3,$4,$5)', [TB, KB, 'Y', 'flagged', 1]);
+check('"없어졌어요" 사진 + 신고 1건 = 2명 → 숨김', (await flagsOf('Y')).hidden === true);
+// 하루 5장
+const P4 = 'trust_d', K4 = 'td-secret-td-secret-td';
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P4, K4, 'home_d', 'd', 'd', 540, 36.0, 128.0]);
+let up = 0; for (let i = 0; i < 6; i++) if ((await fails('select post_photo($1,$2,$3,$4,$5)', [P4, K4, 'Z' + i, 'exists', IMG])) === null) up++;
+check('사진: 하루 5장까지', up === 5, up);
+check('익명 사용자는 숨김 여부 칸을 직접 볼 수 없음', !(await q(`select has_column_privilege('anon','photos','hidden','select') x`))[0].x);
+check('익명 사용자는 사진 테이블에 직접 쓸 수 없음', !(await priv('anon', 'photos', 'insert')));
 
 const bad = results.filter(x => !x).length;
 console.log(`\n${results.length - bad}/${results.length} 통과`);

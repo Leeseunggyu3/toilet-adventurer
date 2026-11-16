@@ -8,7 +8,7 @@ const osm = { elements: [
   { type: 'node', id: 2, lat: 37.5672, lon: 126.9786, tags: { amenity: 'toilets', name: '신고된 화장실' } },
   { type: 'node', id: 3, lat: 37.5700, lon: 126.9820, tags: { amenity: 'toilets', name: '먼 화장실' } },
 ] };
-const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [], signed: false, signedCalls: [], directWrites: 0, rejectVisit: false };
+const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [], signed: false, signedCalls: [], directWrites: 0, rejectVisit: false, v8: false, flagsV8: [], photos: [], photoReports: [] };
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`); };
 
@@ -46,6 +46,10 @@ await page.route('**/sb/rest/v1/**', r => {
       return r.fulfill({ status: 204, body: '' });
     }
     if (db.signed && ['messages', 'reports', 'visits', 'toilets'].includes(table)) { db.directWrites++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'permission denied' }) }); }
+    // 없음 신고 집계·사진(v8) 대역
+    if (table === 'rpc/toilet_flags') { if (!db.v8) return r.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"PGRST202"}' }); return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(db.flagsV8) }); }
+    if (table === 'rpc/post_photo') { const b = JSON.parse(q.postData()); if (!b.p_data.startsWith('data:image/jpeg;base64,') || b.p_data.length > 200000) return r.fulfill({ status: 400, contentType: 'application/json', body: '{"message":"사진 형식"}' }); db.photos.push({ id: db.photos.length + 1, toilet_id: b.p_toilet, kind: b.p_kind, data: b.p_data, user_id: b.p_user, nick: b.p_nick, at: new Date().toISOString() }); if (b.p_kind === 'exists') db.flagsV8 = db.flagsV8.filter(f => f.toilet_id !== b.p_toilet); return r.fulfill({ status: 200, contentType: 'application/json', body: String(db.photos.length) }); }
+    if (table === 'rpc/report_photo') { db.photoReports.push(JSON.parse(q.postData()).p_photo); return r.fulfill({ status: 200, contentType: 'application/json', body: 'false' }); }
     // 서버 지갑 대역: db.wallet이 없으면 "v6 스키마를 아직 실행하지 않은 서버"처럼 404를 돌려준다
     if (['rpc/wallet_state', 'rpc/claim_bonus', 'rpc/claim_mission', 'rpc/claim_tut', 'rpc/buy_item'].includes(table)) {
       const w = db.wallet, b = JSON.parse(q.postData() || '{}'), json = (code, o) => r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(o) });
@@ -64,6 +68,7 @@ await page.route('**/sb/rest/v1/**', r => {
     (db[table] || (db[table] = [])).push(row);
     return r.fulfill({ status: 201, body: '' });
   }
+  if (table === 'photos') { const id = (u.searchParams.get('toilet_id') || '').replace('eq.', ''); return r.fulfill({ status: db.v8 ? 200 : 404, contentType: 'application/json', body: JSON.stringify(db.v8 ? db.photos.filter(p => p.toilet_id === id).reverse() : {}) }); }
   if (table === 'accounts') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(db.account ? [db.account] : []) });
   if (table === 'profiles') { const id = (u.searchParams.get('user_id') || '').replace('eq.', ''); const p = (db.profiles || {})[id]; return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(p ? [{ user_id: id, data: p.data }] : []) }); }
   let rows = db[table] || [];
@@ -272,6 +277,42 @@ try {
   const lastV = db.visits.at(-1);
   check('본인 확인 쓰기: 도착 인증이 변기 좌표와 함께 전송', db.visits.length === nVis + 1 && Math.abs(lastV.lat - 37.57) < 0.001 && Math.abs(lastV.lng - 126.982) < 0.001, JSON.stringify(lastV));
   check('본인 확인 쓰기: 테이블에 직접 쓰는 요청은 한 번도 보내지 않음', db.directWrites === 0, db.directWrites);
+  await page.click('#shClose');
+
+  // ---- 없음 신고 반박과 사진 증거(v8) ----
+  db.v8 = true; db.flagsV8 = [{ toilet_id: 'osm1', flags: 2, hidden: true }];
+  await ctx.setGeolocation({ latitude: 37.5665, longitude: 126.978 });
+  await page.goto(BASE + '/index.html?v8=1'); await page.waitForTimeout(4500);
+  await page.click('#sosBtn'); await page.waitForTimeout(400);
+  const seen8 = new Set([await page.innerText('#sosName')]); for (let i = 0; i < 3; i++) { await page.click('#sosNext'); seen8.add(await page.innerText('#sosName')); }
+  check('신고(v8): 서버가 숨김으로 판정한 변기는 변기탐지에서 빠짐', !seen8.has('공원 화장실'), [...seen8].join(','));
+  await page.click('#sosClose');
+  const openByName = async name => { const n = await page.locator('.tmark').count(); for (let k = 0; k < n; k++) { await page.evaluate(i => document.querySelectorAll('.tmark')[i].click(), k); await page.waitForTimeout(200); if ((await page.innerText('#shName')) === name) return true; } return false; };
+  await openByName('공원 화장실');
+  check('신고(v8): 변기 창에 신고 안내와 반박 방법이 보임', (await page.innerText('#flagNote')).includes('탐험가 2명') && (await page.innerText('#flagNote')).includes('있어요 사진'));
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+  const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('#photoYes')]);
+  await fc.setFiles({ name: 'proof.png', mimeType: 'image/png', buffer: PNG }); await page.waitForTimeout(1500);
+  check('사진: JPEG로 줄여서 올라감(위치 정보 제거)', db.photos.length === 1 && db.photos[0].data.startsWith('data:image/jpeg;base64,') && db.photos[0].kind === 'exists', db.photos[0] ? db.photos[0].data.slice(0, 30) : '없음');
+  await page.waitForTimeout(1500);
+  check('사진: 변기 창에 사진이 표시', (await page.locator('#photos .ph').count()) === 1);
+  check('반박: 있어요 사진 뒤 신고 안내가 사라짐', !(await page.isVisible('#flagNote')));
+  await page.click('#shClose'); await page.click('#sosBtn'); await page.waitForTimeout(400);
+  const back8 = new Set([await page.innerText('#sosName')]); for (let i = 0; i < 4; i++) { await page.click('#sosNext'); back8.add(await page.innerText('#sosName')); }
+  check('반박: 다시 변기탐지 후보로 돌아옴', back8.has('공원 화장실'), [...back8].join(','));
+  await page.click('#sosClose');
+  db.photos.push({ id: 99, toilet_id: 'osm1', kind: 'gone', data: db.photos[0].data, user_id: 'stranger', nick: '👻 누군가', at: new Date().toISOString() });
+  await openByName('공원 화장실'); await page.waitForTimeout(800);
+  await page.click('#photos .ph >> nth=0'); await page.waitForTimeout(200);
+  check('사진 보기: 남의 사진에는 신고 버튼이 보임', await page.isVisible('#photoView') && await page.isVisible('#photoReport'));
+  await page.click('#photoReport'); await page.waitForTimeout(600);
+  check('사진 신고가 서버로 전송', db.photoReports.includes(99));
+  await page.click('#photos .ph >> nth=1'); await page.waitForTimeout(200);
+  check('사진 보기: 내 사진에는 신고 버튼이 없음', !(await page.isVisible('#photoReport')));
+  await page.click('#photoClose'); await page.click('#shClose');
+  await ctx.setGeolocation({ latitude: 37.60, longitude: 127.05 }); await page.click('#locBtn'); await page.waitForTimeout(1200);
+  await openByName('공원 화장실'); await page.click('#photoYes'); await page.waitForTimeout(300);
+  check('사진: 멀리(200m 밖)서는 올릴 수 없음', (await page.innerText('#toast')).includes('200m'));
   await page.click('#shClose');
 
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);
