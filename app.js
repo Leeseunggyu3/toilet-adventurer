@@ -1,4 +1,4 @@
-/* Toilet Adventurer — app.js */
+/* Toilet Adventure — app.js */
 (() => {
   const $ = id => document.getElementById(id);
   const toast = (m, ms = 1800) => { const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };

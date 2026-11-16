@@ -1,6 +1,6 @@
 {
-  "name": "Toilet Adventurer",
-  "short_name": "Toilet Adv.",
+  "name": "Toilet Adventure",
+  "short_name": "Toilet Adv",
   "description": "변기 탐험가가 되어 동네 화장실을 발견·검증하고 레벨을 올리는 지도 게임",
   "start_url": "./",
   "display": "standalone",
