@@ -81,6 +81,8 @@ try {
   check('화장실 등록이 서버로 전송됨', db.toilets.length === 1 && db.toilets[0].name === '점검용 등록');
 
   await page.click('#profBtn'); await page.waitForTimeout(600);
+  check('수첩: 5번 이상 활동하면 계통이 발현됨', (await page.innerText('#meStyle')).includes('계통') && !(await page.innerText('#meStyle')).includes('미발현'), await page.innerText('#meStyle'));
+  check('경지 이름 표시', ['잠든 물방울', '첫 물결', '고요한 수면', '소용돌이'].includes(await page.innerText('#rankLabel')), await page.innerText('#rankLabel'));
   check('탐험가 수첩: 도감에 방문한 변기 표시', (await page.innerText('#dex')).includes('공원 화장실'));
   await page.fill('#nickInput', '점검탐험가'); await page.click('#nickSave'); await page.click('#avatars button[data-a="🦖"]'); await page.waitForTimeout(200);
   check('수첩: 닉네임 변경과 아이콘 선택 반영', (await page.innerText('#meName')) === '점검탐험가' && (await page.innerText('#meAvatar')) === '🦖');

@@ -23,7 +23,18 @@
   const enc = encodeURIComponent;
 
   // ===== 레벨/랭크 =====
-  const RANKS = [[0, '4급 변기 탐험가'], [100, '3급 변기 탐험가'], [400, '준2급 변기 탐험가'], [1000, '2급 변기 탐험가'], [2500, '준1급 변기 탐험가'], [6000, '1급 변기 탐험가'], [15000, '특급 변기 탐험가']];
+  // 경지: 변기력이 쌓이면 물의 흐름처럼 깊어진다
+  const RANKS = [[0, '잠든 물방울'], [100, '첫 물결'], [400, '고요한 수면'], [1000, '소용돌이'], [2500, '깊은 흐름'], [6000, '맑은 근원'], [15000, '무한수류']];
+  // 계통: 어떤 행동을 많이 하느냐에 따라 발현되는 탐험가의 성질
+  const STYLES = {
+    report: ['💧', '맑음', '변기의 상태를 꿰뚫어 보는 자. 상태 보고를 많이 할수록 깊어진다'],
+    visit:  ['👣', '발자국', '직접 걸어가 닿는 자. 도착 인증을 많이 할수록 깊어진다'],
+    talk:   ['🔔', '메아리', '말로 길을 여는 자. 이야기와 답변을 많이 할수록 깊어진다'],
+    found:  ['🕯️', '등불', '없던 곳을 밝히는 자. 화장실 등록과 1호 탐험으로 깊어진다'],
+  };
+  const styleCounts = () => { try { return JSON.parse(localStorage.getItem('ghc-style') || '{}'); } catch (e) { return {}; } };
+  function bump(k) { const c = styleCounts(); const before = myStyle(); c[k] = (c[k] || 0) + 1; try { localStorage.setItem('ghc-style', JSON.stringify(c)); } catch (e) {} const after = myStyle(); if (after && (!before || before[1] !== after[1])) setTimeout(() => toast(`${after[0]} 계통 발현: ${after[1]}`, 3500), 2200); }
+  function myStyle() { const c = styleCounts(); const total = Object.values(c).reduce((x, y) => x + y, 0); if (total < 5) return null; const top = Object.keys(STYLES).sort((x, y) => (c[y] || 0) - (c[x] || 0))[0]; return STYLES[top]; }
   function refreshHUD() {
     $('coins').textContent = Store.coins.toLocaleString();
     // 변기력(누적 경험치)과 등급. 게이지는 다음 등급까지 남은 정도
@@ -31,7 +42,7 @@
     const cur = RANKS[i][0], nxt = RANKS[i + 1] ? RANKS[i + 1][0] : null;
     $('level').textContent = Store.xp.toLocaleString();
     $('xpfill').style.width = nxt ? `${((Store.xp - cur) / (nxt - cur)) * 100}%` : '100%';
-    if (window._lastRank !== undefined && i > window._lastRank) setTimeout(() => toast(`⚡ 승급! ${RANKS[i][1]}`, 3500), 1900);
+    if (window._lastRank !== undefined && i > window._lastRank) setTimeout(() => toast(`🌊 경지 상승: ${RANKS[i][1]}`, 3500), 1900);
     window._lastRank = i;
     $('rankLabel').textContent = RANKS[i][1];
   }
@@ -144,6 +155,7 @@
     window.Backend.postReport(sel.id, b.dataset.k, +b.dataset.v).catch(e => toast('보고 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     renderStatus(sel); restyle();
     document.querySelectorAll('.reports button').forEach(x => { if (x.dataset.k === b.dataset.k) x.classList.toggle('done', x === b); });
+    bump('report');
     reward(near ? 10 : 3, near ? '현장 보고!' : '보고 (현장이면 10💰)');
     checkDaily();
   });
@@ -152,7 +164,7 @@
     if (!me) return toast('위치를 먼저 켜주세요');
     const d = dist(me[0], me[1], sel.lat, sel.lng);
     if (d > 50) return toast(`${fmtD(d)} 떨어져 있어요. 50m 안에서 인증!`);
-    Store.verify(sel.id); reward(30, '도착 인증!'); checkDaily();
+    Store.verify(sel.id); bump('visit'); reward(30, '도착 인증!'); checkDaily();
     if (mission && mission.id === sel.id) { reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
     openSheet(sel);
   };
@@ -191,6 +203,7 @@
     Store.addToilet(t); toilets.set(t.id, t); addMarker(t);
     window.Backend.addToilet(t).catch(e => toast('등록 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     $('addCancel').onclick(); $('addName').value = '';
+    bump('found');
     reward(50, '등록 완료! 검증되면 +50 더');
   };
   for (const t of Store.userToilets()) { toilets.set(t.id, t); addMarker(t); }
@@ -282,7 +295,7 @@
         const s = await B.recordVisit(sel.id, sel.name);
         const prev = statsCache.get(sel.id);
         statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
-        if (s.visits === 1) { reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
+        if (s.visits === 1) { bump('found'); reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
         if (prev && s.level > prev.level) { reward(20, `⚡ 변기 등급 상승! ${s.level}등급`); }
         if (s.mine >= 10) unlock('regular');
       } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
@@ -327,6 +340,7 @@
     const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
     try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { console.error(e); return toast('전송 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
+    bump('talk');
     reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
     loadChat(channel, elId);
   }
@@ -367,6 +381,8 @@
     const m = B.me();
     $('meAvatar').textContent = m.avatar; $('meName').textContent = m.nick;
     $('mePower').textContent = `${$('rankLabel').textContent} · 변기력 ${Store.xp.toLocaleString()}`;
+    const st = myStyle();
+    $('meStyle').innerHTML = st ? `<b>${st[0]} ${st[1]} 계통</b><span>${st[2]}</span>` : `<b>❔ 계통 미발현</b><span>보고·인증·이야기·등록을 합쳐 5번 하면 당신의 계통이 드러납니다</span>`;
     $('profRank').textContent = '아이콘과 닉네임은 채팅과 1호 탐험가 기록에 표시돼요';
     $('nickInput').value = m.nick;
     $('avatars').innerHTML = AVATARS.map(x => `<button class="${x === m.avatar ? 'on' : ''}" data-a="${x}">${x}</button>`).join('');
