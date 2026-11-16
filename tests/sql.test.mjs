@@ -16,7 +16,7 @@ await db.exec(`
   create schema auth; create table auth.users (id uuid primary key);
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
 `);
-for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql']) {
+for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql']) {
   const sql = readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
   try { await db.exec(sql); check(`${f} 실행`, true); } catch (e) { check(`${f} 실행`, false, e.message); }
 }
@@ -129,6 +129,46 @@ await db.exec('alter table messages enable trigger all;');
 let blocked = null;
 for (let i = 0; i < 9 && !blocked; i++) blocked = await fails(`insert into messages (channel,user_id,nick,text) values ('c','spammer','n','x')`);
 check('도배 방지: 1분에 9번째 글은 거절', (blocked || '').includes('너무 빨라요'), blocked || '거절되지 않음');
+
+// ================= v7: 본인 확인이 붙은 쓰기 =================
+try { await db.exec(readFileSync(new URL('../supabase/schema_v7_signed.sql', import.meta.url), 'utf8')); check('v7을 두 번 실행해도 안전', true); } catch (e) { check('v7을 두 번 실행해도 안전', false, e.message); }
+await db.exec('alter table messages disable trigger all;');
+const P = 'user_p', PS = 'p-secret-p-secret-p-secret';
+check('익명 사용자는 테이블에 직접 쓸 수 없음', !(await priv('anon', 'messages', 'insert')) && !(await priv('anon', 'reports', 'insert')) && !(await priv('anon', 'visits', 'insert')) && !(await priv('anon', 'toilets', 'insert')));
+check('익명 사용자가 읽기는 그대로 가능', (await priv('anon', 'messages', 'select')) && (await priv('anon', 'reports', 'select')));
+check('익명 사용자가 쓰기 함수는 실행 가능', (await q(`select has_function_privilege('anon','post_report(text,text,text,text,int,text)','execute') x`))[0].x);
+await db.query('select post_message($1,$2,$3,$4)', [P, PS, 'area:1', '안녕하세요']);
+check('글쓰기: 열쇠로 본인 확인 후 저장', (await q(`select count(*)::int n from messages where user_id=$1`, [P]))[0].n === 1);
+check('글쓰기: 남의 열쇠로는 그 사람 이름으로 못 씀', (await fails('select post_message($1,$2,$3,$4)', [P, 'wrong-secret-wrong-secret', 'area:1', '사칭']) || '').includes('본인 확인'));
+check('글쓰기: 300자를 넘으면 거절', !!(await fails('select post_message($1,$2,$3,$4)', [P, PS, 'area:1', 'x'.repeat(301)])));
+await db.query('select post_report($1,$2,$3,$4,$5)', [P, PS, 'osm1', 'paper', 1]);
+check('보고: 저장되고 지갑에 반영', (await state(P)).stats.reports === 1);
+check('보고: 없는 항목은 거절', !!(await fails('select post_report($1,$2,$3,$4,$5)', [P, PS, 'osm1', 'hack', 1])));
+await db.query('select post_toilet($1,$2,$3,$4,$5,$6)', [P, PS, 'uabc123', 35.0, 135.0, '내가 등록한 곳']);
+check('등록: 저장됨', (await q(`select count(*)::int n from toilets where id='uabc123'`))[0].n === 1);
+check('등록: 좌표가 범위를 벗어나면 거절', !!(await fails('select post_toilet($1,$2,$3,$4,$5,$6)', [P, PS, 'uabc999', 123.0, 135.0, 'x'])));
+// 도착 인증과 이동 속도
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'osm_seoul', '서울', 'n', 540, 37.5665, 126.9780]);
+check('인증: 저장되고 좌표 기록', (await q(`select lat from visits where user_id=$1 and toilet_id='osm_seoul'`, [P]))[0].lat === 37.5665);
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'osm_near', '근처', 'n', 540, 37.5700, 126.9800]);
+check('인증: 걸어갈 수 있는 거리는 바로 인증 가능', (await q(`select count(*)::int n from visits where user_id=$1`, [P]))[0].n === 2);
+const tp = await fails('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'osm_busan', '부산', 'n', 540, 35.1796, 129.0756]);
+check('인증: 서울에서 방금 인증하고 곧바로 부산(325km)은 거절', (tp || '').includes('너무 빨리'), tp || '거절되지 않음');
+await db.query(`update visits set at = at - interval '3 hours' where user_id=$1`, [P]);
+check('인증: 3시간 뒤라면 부산 인증 가능', (await fails('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'osm_busan', '부산', 'n', 540, 35.1796, 129.0756])) === null);
+await db.query(`update visits set at = at - interval '3 hours' where user_id=$1`, [P]);
+await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'uabc123', '등록한 곳', 'n', 540, 37.0, 127.0]);
+check('인증: 사용자가 등록한 화장실은 서버에 있는 좌표를 사용(기기가 보낸 좌표 무시)', (await q(`select lat from visits where user_id=$1 and toilet_id='uabc123'`, [P]))[0].lat === 35);
+check('거리 계산: 서울~부산 약 325km', Math.abs((await q('select dist_m(37.5665,126.9780,35.1796,129.0756) d'))[0].d - 325000) < 5000);
+// 새 탐험가 남발 제한 (네트워크당 하루 50명)
+await db.query(`select set_config('request.headers', '{"x-forwarded-for":"203.0.113.9, 10.0.0.1"}', false)`);
+let lastErr = null, made = 0;
+for (let i = 0; i < 52; i++) { const e = await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_' + i, 'sybil-secret-sybil-secret-' + i, 'osm1', 'open', 1]); if (e) { lastErr = e; break; } made++; }
+check('같은 네트워크에서 하루 50명까지만 새 탐험가 생성', made === 50 && (lastErr || '').includes('새 탐험가'), `${made}명 생성 후: ${lastErr}`);
+check('이미 있는 탐험가는 제한과 무관하게 계속 사용 가능', (await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_0', 'sybil-secret-sybil-secret-0', 'osm2', 'open', 1])) === null);
+check('IP 주소 원문은 저장하지 않음(해시만)', (await q(`select ip_hash from key_births limit 1`))[0].ip_hash.length === 64 && (await q(`select count(*)::int n from key_births where ip_hash like '%203.0.113%'`))[0].n === 0);
+await db.query(`select set_config('request.headers', '', false)`);
+check('헤더가 없는 환경에서도 오류 없이 동작', (await fails('select post_report($1,$2,$3,$4,$5)', ['nohdr_user', 'nohdr-secret-nohdr-secret', 'osm1', 'open', 1])) === null);
 
 const bad = results.filter(x => !x).length;
 console.log(`\n${results.length - bad}/${results.length} 통과`);

@@ -53,3 +53,19 @@ jobs:
           path: .
       - id: deployment
         uses: actions/deploy-pages@v4
+
+  live:
+    # 배포가 끝난 뒤 진짜 Supabase와 배포된 사이트를 점검한다. 실패해도 배포를 되돌리지는 않는다 (결과는 로그로 확인)
+    needs: deploy
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Live check (real Supabase + deployed site)
+        run: |
+          sleep 20
+          node tests/live.check.mjs
+

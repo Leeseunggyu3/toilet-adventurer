@@ -51,6 +51,7 @@ const Store = (() => {
     // 도착 인증 (하루 1회/장소)
     canVerify(id) { return (s.verified[id] || '') !== today(); },
     verify(id) { s.verified[id] = today(); save(); },
+    unverify(id) { delete s.verified[id]; save(); },  // 서버가 인증을 거절했을 때 되돌린다
 
     // 일일 퀘스트
     dailyProgress() { if (s.daily.day !== today()) { s.daily = { day: today(), done: 0 }; save(); } return s.daily.done; },

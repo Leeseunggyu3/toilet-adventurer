@@ -63,9 +63,26 @@
     setNick(n) { try { localStorage.setItem('ghc-nick', n); } catch (e) {} }
     setAvatar(a) { try { localStorage.setItem('ghc-avatar', a); } catch (e) {} }
     async listMessages(channel) { return (await this._get(`messages?channel=eq.${encodeURIComponent(channel)}&order=at.desc&limit=80`)).reverse(); }
-    async postMessage(m) { return this._post('messages', Object.assign({ user_id: uid, nick: fullNick() }, m)); }
+    // ---- 본인 확인이 붙은 쓰기 (schema_v7). 서버에 v7이 없으면(404) 예전 방식으로 직접 쓴다 ----
+    async _signed(name, body, legacy) {
+      if (this.signed !== false) {
+        const r = await fetch(`${this.url}/rest/v1/rpc/${name}`, { method: 'POST', headers: this.h, body: JSON.stringify(Object.assign({ p_user: uid, p_secret: secret }, body)) });
+        if (r.ok) { this.signed = true; return; }
+        if (r.status !== 404) { const t = await r.text(); let m = t; try { m = JSON.parse(t).message || t; } catch (e) {} throw new Error(String(m).slice(0, 200)); }
+        this.signed = false;
+      }
+      return legacy();
+    }
+    async postMessage(m) {
+      return this._signed('post_message', { p_channel: m.channel, p_text: m.text, p_kind: m.kind || 'chat', p_toilet: m.toilet_id || null, p_parent: m.parent || null, p_nick: fullNick() },
+        () => this._post('messages', Object.assign({ user_id: uid, nick: fullNick() }, m)));
+    }
     async markHelpful(id) { await fetch(`${this.url}/rest/v1/rpc/mark_helpful`, { method: 'POST', headers: this.h, body: JSON.stringify({ mid: id }) }); }
-    async recordVisit(toilet_id, toilet_name, tz) { await this._post('visits', { toilet_id, toilet_name, user_id: uid, nick: fullNick(), tz }); return this.toiletStats(toilet_id); }
+    async recordVisit(toilet_id, toilet_name, tz, lat, lng) {
+      await this._signed('post_visit', { p_toilet: toilet_id, p_name: toilet_name || null, p_nick: fullNick(), p_tz: tz === undefined ? null : tz, p_lat: lat === undefined ? null : lat, p_lng: lng === undefined ? null : lng },
+        () => this._post('visits', { toilet_id, toilet_name, user_id: uid, nick: fullNick(), tz }));
+      return this.toiletStats(toilet_id);
+    }
     // ---- 서버 지갑 (schema_v6): 코인·변기력·칭호·구매를 서버가 계산한다 ----
     async _rpc(name, body) {
       const r = await fetch(`${this.url}/rest/v1/rpc/${name}`, { method: 'POST', headers: this.h, body: JSON.stringify(body) });
@@ -81,7 +98,10 @@
     buyItem(item) { return this._rpc('buy_item', { p_user: uid, p_secret: secret, p_item: item }); }
     async toiletStats(toilet_id) { return statsFrom(await this._get(`visits?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=user_id,nick,at&order=at.asc&limit=2000`)); }
     async myVisits() { return groupMine(await this._get(`visits?user_id=eq.${uid}&select=toilet_id,toilet_name,at&order=at.desc&limit=1000`)); }
-    async postReport(toilet_id, k, v) { return this._post('reports', { toilet_id, k, v, user_id: uid, nick: fullNick() }); }
+    async postReport(toilet_id, k, v) {
+      return this._signed('post_report', { p_toilet: toilet_id, p_k: k, p_v: v, p_nick: fullNick() },
+        () => this._post('reports', { toilet_id, k, v, user_id: uid, nick: fullNick() }));
+    }
     // 최근 12시간 상태 보고 (신고 제외). 최신순이라 병합 시 가장 새 값이 남는다
     async recentReports() {
       const since = new Date(Date.now() - 12 * 3600e3).toISOString();
@@ -99,7 +119,10 @@
     }
     async getProfile(id) { const rows = await this._get(`profiles?user_id=eq.${encodeURIComponent(id)}&select=user_id,data,updated_at`); return rows[0] ? rows[0].data : null; }
     async postFeedback(text, version) { return this._post('feedback', { text, version, user_id: uid, nick: fullNick(), ua: navigator.userAgent.slice(0, 200) }); }
-    async addToilet(t) { return this._post('toilets', { id: t.id, lat: t.lat, lng: t.lng, name: t.name, access: t.tags?.access || 'yes', user_id: uid, nick: fullNick() }); }
+    async addToilet(t) {
+      return this._signed('post_toilet', { p_id: t.id, p_lat: t.lat, p_lng: t.lng, p_name: t.name, p_access: t.tags?.access || 'yes', p_nick: fullNick() },
+        () => this._post('toilets', { id: t.id, lat: t.lat, lng: t.lng, name: t.name, access: t.tags?.access || 'yes', user_id: uid, nick: fullNick() }));
+    }
     async toiletsIn(lat, lng, d) { return this._get(`toilets?lat=gte.${lat - d}&lat=lte.${lat + d}&lng=gte.${lng - d}&lng=lte.${lng + d}&select=id,lat,lng,name,access,nick&limit=500`); }
   }
 

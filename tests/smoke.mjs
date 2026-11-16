@@ -8,7 +8,7 @@ const osm = { elements: [
   { type: 'node', id: 2, lat: 37.5672, lon: 126.9786, tags: { amenity: 'toilets', name: '신고된 화장실' } },
   { type: 'node', id: 3, lat: 37.5700, lon: 126.9820, tags: { amenity: 'toilets', name: '먼 화장실' } },
 ] };
-const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [] };
+const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [], signed: false, signedCalls: [], directWrites: 0, rejectVisit: false };
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`); };
 
@@ -32,6 +32,20 @@ await page.route('**/sb/rest/v1/**', r => {
   if (q.method() === 'POST') {
     if (table.startsWith('accounts')) { const b = JSON.parse(q.postData()); db.account = { state: b.state, updated_at: b.updated_at }; return r.fulfill({ status: 201, body: '' }); }
     if (table === 'rpc/save_profile') { const b = JSON.parse(q.postData()); (db.profiles || (db.profiles = {}))[b.p_user] = { data: b.p_data, secret: b.p_secret }; return r.fulfill({ status: 204, body: '' }); }
+    // 본인 확인 쓰기(v7) 대역: db.signed가 꺼져 있으면 "v7을 아직 실행하지 않은 서버"처럼 404
+    if (['rpc/post_message', 'rpc/post_report', 'rpc/post_visit', 'rpc/post_toilet'].includes(table)) {
+      if (!db.signed) return r.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'PGRST202', message: 'Could not find the function' }) });
+      const b = JSON.parse(q.postData() || '{}'); db.signedCalls.push({ table, b });
+      if (!(b.p_secret && b.p_secret.length >= 16)) return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: 'bad request' }) });
+      if (table === 'rpc/post_visit' && b.p_toilet === 'osm3' && db.rejectVisit) return r.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ message: '직전 인증 지점에서 너무 빨리 이동했어요. 잠시 후 다시 인증해 주세요.' }) });
+      const now = new Date().toISOString(), id = 'id' + Math.random().toString(36).slice(2);
+      if (table === 'rpc/post_message') db.messages.push({ id, at: now, helpful: 0, channel: b.p_channel, toilet_id: b.p_toilet, user_id: b.p_user, nick: b.p_nick, text: b.p_text, kind: b.p_kind, parent: b.p_parent });
+      if (table === 'rpc/post_report') { db.reports.push({ id, at: now, toilet_id: b.p_toilet, k: b.p_k, v: b.p_v, user_id: b.p_user }); if (db.wallet) { db.wallet.earned += 5; db.wallet.coins += 5; db.wallet.xp += 5; } }
+      if (table === 'rpc/post_visit') db.visits.push({ id, at: now, toilet_id: b.p_toilet, toilet_name: b.p_name, user_id: b.p_user, nick: b.p_nick, lat: b.p_lat, lng: b.p_lng });
+      if (table === 'rpc/post_toilet') db.toilets.push({ id: b.p_id, at: now, lat: b.p_lat, lng: b.p_lng, name: b.p_name, user_id: b.p_user, nick: b.p_nick });
+      return r.fulfill({ status: 204, body: '' });
+    }
+    if (db.signed && ['messages', 'reports', 'visits', 'toilets'].includes(table)) { db.directWrites++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'permission denied' }) }); }
     // 서버 지갑 대역: db.wallet이 없으면 "v6 스키마를 아직 실행하지 않은 서버"처럼 404를 돌려준다
     if (['rpc/wallet_state', 'rpc/claim_bonus', 'rpc/claim_mission', 'rpc/claim_tut', 'rpc/buy_item'].includes(table)) {
       const w = db.wallet, b = JSON.parse(q.postData() || '{}'), json = (code, o) => r.fulfill({ status: code, contentType: 'application/json', body: JSON.stringify(o) });
@@ -232,6 +246,32 @@ try {
   await page.evaluate(() => document.querySelectorAll('.tmark')[2].click()); await page.waitForTimeout(500);
   await page.click('.reports button[data-k=clean][data-v="1"]'); await page.waitForTimeout(1800);
   check('서버 지갑: 보고 보상은 서버가 계산한 만큼(+5) 반영', (await page.innerText('#coins')) === '205', await page.innerText('#coins'));
+  await page.click('#shClose');
+
+  // ---- 본인 확인이 붙은 쓰기(v7): 직접 쓰기가 막힌 서버에서도 전부 동작해야 한다 ----
+  db.signed = true; db.rejectVisit = true;
+  await page.goto(BASE + '/index.html?signed=1'); await page.waitForTimeout(2500);
+  const nMsg = db.messages.length, nRep = db.reports.length;
+  await page.click('#areaBtn'); await page.waitForTimeout(300); await page.fill('#areaMsg', '서명된 글'); await page.press('#areaMsg', 'Enter'); await page.waitForTimeout(800);
+  check('본인 확인 쓰기: 채팅이 열쇠와 함께 전송되고 화면에 표시', db.messages.length === nMsg + 1 && db.signedCalls.some(c => c.table === 'rpc/post_message' && c.b.p_secret.length >= 16) && (await page.innerText('#areaChat')).includes('서명된 글'));
+  await page.click('#areaClose');
+  await page.evaluate(() => document.querySelectorAll('.tmark')[2].click()); await page.waitForTimeout(500);
+  await page.click('.reports button[data-k=queue][data-v="0"]'); await page.waitForTimeout(600);
+  check('본인 확인 쓰기: 상태 보고', db.reports.length === nRep + 1 && db.signedCalls.some(c => c.table === 'rpc/post_report'));
+  await page.click('#shClose');
+  // 서버가 "이동이 너무 빠르다"며 인증을 거절하는 경우: 기기에서도 인증이 취소되어 다시 시도할 수 있어야 한다
+  await ctx.setGeolocation({ latitude: 37.5700, longitude: 126.9820 }); await page.click('#locBtn'); await page.waitForTimeout(1500);
+  const nMark = await page.locator('.tmark').count();
+  for (let k = 0; k < nMark; k++) { await page.evaluate(n => document.querySelectorAll('.tmark')[n].click(), k); await page.waitForTimeout(250); if ((await page.innerText('#shName')) === '먼 화장실') break; }
+  const nVis = db.visits.length;
+  await page.click('#verifyBtn'); await page.waitForTimeout(1200);
+  check('인증 거절: 서버가 거절하면 안내가 뜨고 기록되지 않음', db.visits.length === nVis && (await page.innerText('#toast')).includes('너무 빨리'), await page.innerText('#toast'));
+  check('인증 거절: 기기에서도 취소되어 다시 인증할 수 있음', !(await page.isDisabled('#verifyBtn')) && (await page.innerText('#verifyBtn')).includes('도착 인증'));
+  db.rejectVisit = false;
+  await page.click('#verifyBtn'); await page.waitForTimeout(1200);
+  const lastV = db.visits.at(-1);
+  check('본인 확인 쓰기: 도착 인증이 변기 좌표와 함께 전송', db.visits.length === nVis + 1 && Math.abs(lastV.lat - 37.57) < 0.001 && Math.abs(lastV.lng - 126.982) < 0.001, JSON.stringify(lastV));
+  check('본인 확인 쓰기: 테이블에 직접 쓰는 요청은 한 번도 보내지 않음', db.directWrites === 0, db.directWrites);
   await page.click('#shClose');
 
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);

@@ -328,15 +328,20 @@
     const before = sel && Store.canVerify(sel.id);
     _verify();
     if (sel && before && !Store.canVerify(sel.id)) {
+      const vt = sel; // 기다리는 동안 다른 변기를 열어도 이 변기 기준으로 처리
       try {
-        const vt = sel; // 기다리는 동안 다른 변기를 열어도 이 변기 기준으로 처리
         const prev = statsCache.get(vt.id);
-        const s = await B.recordVisit(vt.id, vt.name, serverMode ? -new Date().getTimezoneOffset() : undefined);
+        const s = await B.recordVisit(vt.id, vt.name, serverMode ? -new Date().getTimezoneOffset() : undefined, vt.lat, vt.lng);
         statsCache.set(vt.id, s); if (sel === vt) renderToiletLevel(s); markers.get(vt.id)?.setIcon(icon(vt));
         if (serverMode && missionDone === vt.id) { missionDone = null; try { applyWallet(await B.claimMission(vt.id)); toast('🎯 미션 완료! +40💰', 2500); } catch (e) { toast('미션 보상 실패: ' + String(e.message || e).slice(0, 100), 6000); } }
         if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); }
         if (prev && s.level > prev.level) setTimeout(() => toast(`⚡ 이 변기의 등급이 올랐어요! ${s.level}등급`, 3000), 2400);
-      } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
+      } catch (e) {
+        console.error(e);
+        // 서버가 받아주지 않은 인증은 기기에서도 취소한다 (오늘 다시 시도할 수 있게)
+        if (vt) { Store.unverify(vt.id); ach.v = ach.v.filter(x => !(x[0] === vt.id && Date.now() - x[1] < 60000)); achSave(); if (sel === vt) openSheet(vt); }
+        toast('인증 실패: ' + String(e.message || e).slice(0, 140), 9000);
+      }
     }
   };
 
