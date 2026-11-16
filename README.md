@@ -21,6 +21,7 @@
 | `backend.js`, `store.js`, `auth.js` | 서버 통신, 기기 저장, 구글 로그인과 계정 저장 |
 | `ads.js` | 배너 광고 자리 (기본 꺼짐) |
 | `privacy.html` | 개인정보처리방침 |
+| `tools/build-toilet-data.mjs` | 화장실 데이터 미리 받기. 매주 GitHub Actions가 실행해 `toilet-data` 브랜치에 올리고, 배포 때 `data/`로 붙인다 |
 | `supabase/*.sql` | 서버 테이블과 보상 규칙 (v1~v8 순서대로 실행). 코인·변기력·칭호·구매는 v6의 `wallet_state`가 계산하고, v7부터 모든 쓰기는 본인 확인 함수(`post_*`)를 거침. v8은 없음 신고 집계(`toilet_flags`)와 사진 증거 |
 | `tests/smoke.mjs` | 화면 자동 점검 (가짜 서버). 실패하면 배포되지 않음 |
 | `tests/sql.test.mjs` | 서버 SQL 점검 (진짜 Postgres에 스키마를 올려 보상 규칙 확인) |
@@ -29,6 +30,7 @@
 ## 로드맵
 - [x] 채팅, 변기 등급, 상태 보고·등록 공유, 도배 방지
 - [x] 칭호·유물·스티커·프로필 카드, 코인 상점, 구글 로그인
+- [x] 한국·일본 화장실 데이터 미리 받기 (매주 갱신)
 - [ ] 다국어 (한국어·영어·일본어)
 - [ ] 자체 도메인 → 배너 광고 심사 (`config.js`의 `AD_BANNER`)
 - [ ] 앱 출시(구글플레이) → 보상형 광고를 `grantBonus()`에 연결

@@ -69,6 +69,9 @@ try {
   const r = await fetch(SITE + '?live=' + Date.now()); const t = await r.text();
   const ver = (t.match(/app\.js\?v=([0-9a-z]+)/) || [])[1];
   line(r.ok && t.includes('Toilet Adventure') ? '✅' : '❌', '배포된 사이트 열림', `버전 ${ver || '알 수 없음'}`);
+  const d = await fetch(SITE + 'data/index.json?live=' + Date.now());
+  if (d.ok) { const ix = await d.json(); const days = Math.round((Date.now() - new Date(ix.at)) / 864e5); line(days <= 10 ? '✅' : '⚠️', '미리 받은 화장실 데이터', `${ix.total.toLocaleString()}곳, 타일 ${Object.keys(ix.tiles).length}개, ${days}일 전 갱신, 받기 실패 지역 ${ix.missing.length}곳`); }
+  else line('⏳', '미리 받은 화장실 데이터 없음', '데이터 받기 작업이 아직 안 돌았음. 앱은 Overpass에 직접 묻는다');
   const p = await fetch(SITE + 'privacy.html'); line(p.ok ? '✅' : '❌', '개인정보처리방침 페이지');
 } catch (e) { line('❌', '배포된 사이트 접속 실패', String(e).slice(0, 120)); }
 

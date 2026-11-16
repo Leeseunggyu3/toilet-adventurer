@@ -8,7 +8,7 @@ const osm = { elements: [
   { type: 'node', id: 2, lat: 37.5672, lon: 126.9786, tags: { amenity: 'toilets', name: '신고된 화장실' } },
   { type: 'node', id: 3, lat: 37.5700, lon: 126.9820, tags: { amenity: 'toilets', name: '먼 화장실' } },
 ] };
-const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [], signed: false, signedCalls: [], directWrites: 0, rejectVisit: false, v8: false, flagsV8: [], photos: [], photoReports: [] };
+const db = { messages: [], visits: [], reports: [], toilets: [], feedback: [], wallet: null, walletCalls: [], signed: false, signedCalls: [], directWrites: 0, rejectVisit: false, v8: false, flagsV8: [], photos: [], photoReports: [], overpassCalls: 0 };
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`); };
 
@@ -18,7 +18,7 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
 
-await page.route('**/overpass-api.de/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(osm) }));
+await page.route('**/overpass-api.de/**', r => (db.overpassCalls++, r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(osm) })));
 await page.route('**/tile.openstreetmap.org/**', r => r.abort());
 // 서버를 같은 주소의 가짜로 바꿔치기
 await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: `window.GHC_CONFIG={SUPABASE_URL:'${BASE}/sb',SUPABASE_ANON_KEY:'test',GOOGLE_LOGIN:true};` }));
@@ -314,6 +314,22 @@ try {
   await openByName('공원 화장실'); await page.click('#photoYes'); await page.waitForTimeout(300);
   check('사진: 멀리(200m 밖)서는 올릴 수 없음', (await page.innerText('#toast')).includes('200m'));
   await page.click('#shClose');
+
+  // ---- 미리 받아둔 화장실 데이터: 덮는 지역에서는 Overpass에 묻지 않는다 ----
+  await page.route('**/data/index.json', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ v: 1, at: '2026-11-17T00:00:00Z', region: { s: 37, w: 126, n: 38, e: 127.5 }, tile: 0.5, total: 2, missing: [[37.5, 127, 38, 127.5]], tiles: { '75_253': 2 } }) }));
+  await page.route('**/data/t/75_253.json*', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ v: 1, t: [['osm5001', 37.5667, 126.9779, '미리받은 시청 화장실', 3, '24/7'], ['osmw5002', 37.5672, 126.9790, '', 0, '']] }) }));
+  await ctx.setGeolocation({ latitude: 37.5665, longitude: 126.978 });
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('ghc-osm')) localStorage.removeItem(k); });
+  db.overpassCalls = 0;
+  await page.goto(BASE + '/index.html?pre=1'); await page.waitForTimeout(3000);
+  check('미리 받은 데이터: 덮는 지역에서는 Overpass를 부르지 않음', db.overpassCalls === 0, db.overpassCalls + '번 호출');
+  check('미리 받은 데이터: 그 지역 화장실이 지도에 표시', await openByName('미리받은 시청 화장실'));
+  check('미리 받은 데이터: 휠체어·유료·개방시간 정보 유지', (await page.innerText('#shMeta')).includes('휠체어') && (await page.innerText('#shMeta')).includes('유료') && (await page.innerText('#shMeta')).includes('24/7'), await page.innerText('#shMeta'));
+  check('미리 받은 데이터: 이름이 없으면 "공중화장실"', await (async () => { await page.click('#shClose'); return openByName('공중화장실'); })());
+  await page.click('#shClose');
+  await ctx.setGeolocation({ latitude: 37.6, longitude: 127.2 }); await page.click('#locBtn'); await page.waitForTimeout(2500);
+  check('미리 받은 데이터: 받기에 실패한 지역(missing)에서는 Overpass로 직접', db.overpassCalls > 0, db.overpassCalls + '번 호출');
+  await page.unroute('**/data/index.json'); await page.unroute('**/data/t/75_253.json*');
 
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);
   const pv = await page.request.get(BASE + '/privacy.html');

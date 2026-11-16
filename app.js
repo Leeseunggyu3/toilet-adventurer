@@ -64,15 +64,55 @@
   // ===== 화장실 데이터 (OSM Overpass, 사용자 등록) =====
   function tileKey(lat, lng) { return `${Math.floor(lat * 50)}:${Math.floor(lng * 50)}`; } // ~2km 격자
   // 격자 한 칸(약 2km) 전체를 불러온다. 예전에는 '처음 본 지점 주변 1.3km'만 불러와서 같은 칸 안의 먼 곳이 비는 문제가 있었다
+  // ===== 미리 받아둔 화장실 데이터 (data/ 폴더, 매주 갱신) =====
+  // index.json: 덮는 지역, 실패한 지역(missing), 타일별 개수. 타일 = 0.5도 칸, 파일 data/t/{floor(위도*2)}_{floor(경도*2)}.json
+  let dataIndex; // undefined = 아직 안 봄, null = 없음
+  async function getIndex() {
+    if (dataIndex !== undefined) return dataIndex;
+    try { const r = await fetch('data/index.json', { cache: 'no-cache' }); dataIndex = r.ok ? await r.json() : null; } catch (e) { dataIndex = null; }
+    if (dataIndex && !(dataIndex.region && dataIndex.tiles)) dataIndex = null;
+    return dataIndex;
+  }
+  function covered(ix, lat, lng) {
+    const g = ix.region;
+    if (!(lat >= g.s && lat < g.n && lng >= g.w && lng < g.e)) return false;
+    return !(ix.missing || []).some(b => lat >= b[0] && lat < b[2] && lng >= b[1] && lng < b[3]);
+  }
+  const tileCache = new Map();
+  function getTile(key) {
+    if (!tileCache.has(key)) {
+      const p = fetch(`data/t/${key}.json?d=${encodeURIComponent(dataIndex.at || '')}`).then(r => { if (!r.ok) throw new Error('tile ' + r.status); return r.json(); }).then(j => j.t || []);
+      p.catch(() => tileCache.delete(key)); tileCache.set(key, p);
+    }
+    return tileCache.get(key);
+  }
+  function rowToToilet(r) {
+    const f = r[4] || 0, tags = {};
+    if (f & 1) tags.fee = 'yes'; if (f & 2) tags.wheelchair = 'yes'; if (f & 4) tags.unisex = 'yes'; if (f & 8) tags.changing_table = 'yes'; if (r[5]) tags.opening_hours = r[5];
+    return { id: r[0], lat: r[1], lng: r[2], name: r[3] || '공중화장실', src: 'osm', tags };
+  }
+  // 이 칸(s~n, w~e)의 화장실. 미리 받아둔 데이터가 이 지역을 덮지 않거나 불러오기에 실패하면 null (→ Overpass로)
+  async function fromPrebuilt(lat, lng, s, w, n, e) {
+    const ix = await getIndex();
+    if (!ix || !covered(ix, lat, lng)) return null;
+    const keys = new Set();
+    for (const a1 of [s, n]) for (const b1 of [w, e]) keys.add(`${Math.floor(a1 * 2)}_${Math.floor(b1 * 2)}`);
+    try {
+      let rows = [];
+      for (const key of keys) if (ix.tiles[key]) rows = rows.concat(await getTile(key));
+      return rows.filter(r => r[1] >= s && r[1] <= n && r[2] >= w && r[2] <= e).map(rowToToilet);
+    } catch (err) { return null; }
+  }
+
   async function loadCell(lat, lng) {
     const k = tileKey(lat, lng); if (fetched.has(k)) return; fetched.add(k);
     const gx = Math.floor(lat * 50), gy = Math.floor(lng * 50), pad = 0.003;
     const s = gx / 50 - pad, n = (gx + 1) / 50 + pad, w = gy / 50 - pad, e2 = (gy + 1) / 50 + pad;
     const q = `[out:json][timeout:20];(node["amenity"="toilets"](${s},${w},${n},${e2});way["amenity"="toilets"](${s},${w},${n},${e2}););out center 300;`;
     const cacheKey = 'ghc-osm2-' + k;
-    let data = null;
-    try { const c = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (c && Date.now() - c.t < 7 * 864e5) data = c.d; } catch (e) {}
-    if (!data) {
+    let data = await fromPrebuilt(lat, lng, s, w, n, e2);  // 1순위: 우리 사이트에 미리 받아둔 데이터
+    if (!data) try { const c = JSON.parse(localStorage.getItem(cacheKey) || 'null'); if (c && Date.now() - c.t < 7 * 864e5) data = c.d; } catch (e) {}
+    if (!data) {  // 미리 받아둔 데이터가 없는 지역만 Overpass에 직접 묻는다
       try {
         const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + enc(q) });
         const j = await r.json();

@@ -27,6 +27,8 @@ jobs:
         run: |
           npm install @electric-sql/pglite@0.5 >/dev/null
           node tests/sql.test.mjs
+      - name: Data builder test (fake Overpass)
+        run: node tests/data.test.mjs
       - name: Smoke test
         run: |
           python3 -m http.server 8765 >/dev/null 2>&1 &
@@ -40,13 +42,22 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Attach toilet data (toilet-data branch, if it exists)
+        run: |
+          if git ls-remote --exit-code --heads origin toilet-data >/dev/null 2>&1; then
+            git fetch -q --depth=1 origin toilet-data
+            mkdir -p data && git archive FETCH_HEAD | tar -x -C data
+            echo "data: $(ls data/t | wc -l) tiles"
+          else
+            echo "toilet-data 브랜치가 아직 없음: 앱은 Overpass에 직접 묻는다"
+          fi
       - name: Stamp version (캐시 무효화 + 앱에 버전 표시)
         run: |
           V=$(git rev-parse --short HEAD)
           sed -i -E "s#\?v=[0-9a-z]+\"#?v=$V\"#g" index.html
           sed -i "s#__VERSION__#$V#" app.js
           sed -i -E "s#ghc-shell-[0-9a-z]+#ghc-shell-$V#" sw.js
-          rm -rf tests supabase .github
+          rm -rf tests supabase tools .github
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

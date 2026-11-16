@@ -1,0 +1,37 @@
+name: Refresh toilet data
+# 일주일에 한 번 OpenStreetMap에서 한국·일본 화장실을 받아 toilet-data 브랜치에 올리고, 사이트를 다시 배포한다.
+# 받다가 문제가 생기면(너무 적게 받음 등) 발행하지 않으므로 지난주 데이터가 그대로 유지된다.
+on:
+  schedule:
+    - cron: '17 18 * * 0'   # 매주 월요일 03:17 (한국·일본 시간)
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: toilet-data
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Download toilets from OpenStreetMap
+        run: node tools/build-toilet-data.mjs out
+      - name: Publish to toilet-data branch (history kept to one commit)
+        run: |
+          cd out
+          git init -q -b toilet-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "toilet data $(date -u +%F)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" toilet-data
+      - name: Redeploy site with the new data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main -R ${{ github.repository }}
