@@ -12,7 +12,8 @@ language sql immutable as $$
   select 2 * 6371000 * asin(sqrt(power(sin(radians(lat2 - lat1) / 2), 2) + cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lng2 - lng1) / 2), 2)));
 $$;
 
--- 새 탐험가(새 기기 열쇠)가 같은 네트워크에서 하루에 너무 많이 만들어지는 것을 막기 위한 집계.
+-- 새 탐험가(새 기기 열쇠)가 같은 네트워크에서 하루에 너무 많이 만들어지는 것을 막기 위한 집계. 기준은 하루 500명.
+-- 휴대폰 데이터는 많은 사람이 같은 주소를 나눠 쓰므로 넉넉하게 잡았다. 이미 있는 탐험가에게는 적용되지 않는다.
 -- IP 주소 자체는 저장하지 않는다. 날짜를 섞은 해시만 남기므로 다음 날이면 같은 사람인지 알 수 없다.
 create table if not exists key_births (ip_hash text not null, day date not null, n int not null default 0, primary key (ip_hash, day));
 alter table key_births enable row level security;
@@ -21,6 +22,7 @@ revoke all on public.key_births from anon, authenticated;
 create or replace function check_key(p_user text, p_secret text) returns void
 language plpgsql security definer set search_path = public as $$
 declare h text; cur text; ip text; ih text; cnt int; today date := (now() at time zone 'utc')::date;
+  daily_new_limit constant int := 500;  -- 같은 네트워크에서 하루에 새로 생길 수 있는 탐험가 수. 바꾸려면 이 숫자만 고치고 이 파일을 다시 실행
 begin
   if p_user is null or length(p_user) < 4 or length(p_user) > 64 or p_secret is null or length(p_secret) < 16 then raise exception 'bad request'; end if;
   h := encode(sha256(convert_to(p_secret, 'UTF8')), 'hex');
@@ -34,7 +36,7 @@ begin
       ih := encode(sha256(convert_to(ip || '|' || today::text, 'UTF8')), 'hex');
       insert into key_births (ip_hash, day, n) values (ih, today, 1)
         on conflict (ip_hash, day) do update set n = key_births.n + 1 returning n into cnt;
-      if cnt > 50 then raise exception '오늘은 이 네트워크에서 새 탐험가를 더 만들 수 없어요. 내일 다시 시도해 주세요.'; end if;
+      if cnt > daily_new_limit then raise exception '지금 이 네트워크에서 새 탐험가가 너무 많이 만들어지고 있어요. 와이파이를 바꾸거나 내일 다시 시도해 주세요.'; end if;
     end if;
     insert into profiles (user_id, key_hash, data) values (p_user, h, '{}'::jsonb) on conflict (user_id) do nothing;
     select key_hash into cur from profiles where user_id = p_user;

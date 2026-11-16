@@ -160,11 +160,11 @@ await db.query(`update visits set at = at - interval '3 hours' where user_id=$1`
 await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P, PS, 'uabc123', '등록한 곳', 'n', 540, 37.0, 127.0]);
 check('인증: 사용자가 등록한 화장실은 서버에 있는 좌표를 사용(기기가 보낸 좌표 무시)', (await q(`select lat from visits where user_id=$1 and toilet_id='uabc123'`, [P]))[0].lat === 35);
 check('거리 계산: 서울~부산 약 325km', Math.abs((await q('select dist_m(37.5665,126.9780,35.1796,129.0756) d'))[0].d - 325000) < 5000);
-// 새 탐험가 남발 제한 (네트워크당 하루 50명)
+// 새 탐험가 남발 제한 (네트워크당 하루 500명)
 await db.query(`select set_config('request.headers', '{"x-forwarded-for":"203.0.113.9, 10.0.0.1"}', false)`);
 let lastErr = null, made = 0;
-for (let i = 0; i < 52; i++) { const e = await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_' + i, 'sybil-secret-sybil-secret-' + i, 'osm1', 'open', 1]); if (e) { lastErr = e; break; } made++; }
-check('같은 네트워크에서 하루 50명까지만 새 탐험가 생성', made === 50 && (lastErr || '').includes('새 탐험가'), `${made}명 생성 후: ${lastErr}`);
+for (let i = 0; i < 502; i++) { const e = await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_' + i, 'sybil-secret-sybil-secret-' + i, 'osm1', 'open', 1]); if (e) { lastErr = e; break; } made++; }
+check('같은 네트워크에서 하루 500명까지만 새 탐험가 생성', made === 500 && (lastErr || '').includes('새 탐험가'), `${made}명 생성 후: ${lastErr}`);
 check('이미 있는 탐험가는 제한과 무관하게 계속 사용 가능', (await fails('select post_report($1,$2,$3,$4,$5)', ['sybil_0', 'sybil-secret-sybil-secret-0', 'osm2', 'open', 1])) === null);
 check('IP 주소 원문은 저장하지 않음(해시만)', (await q(`select ip_hash from key_births limit 1`))[0].ip_hash.length === 64 && (await q(`select count(*)::int n from key_births where ip_hash like '%203.0.113%'`))[0].n === 0);
 await db.query(`select set_config('request.headers', '', false)`);
