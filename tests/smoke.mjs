@@ -46,15 +46,15 @@ try {
   for (let i = 0; i < 6; i++) await page.click('#tutNext');
   check('튜토리얼을 끝까지 넘기면 닫힘', !(await page.isVisible('#help')));
   check('지도에 변기 핀 3개 표시', (await page.locator('.tmark').count()) === 3);
-  check('버튼 이름이 "구조 신청"', (await page.innerText('#sosBtn')).includes('구조 신청'));
+  check('버튼 이름이 "변기탐지"', (await page.innerText('#sosBtn')).includes('변기탐지'));
 
   await page.waitForTimeout(2500); // 서버 동기화 대기
   await page.click('#sosBtn'); await page.waitForTimeout(400);
   const first = await page.innerText('#sosName');
-  check('구조 신청: 가장 가까운 변기를 안내', first === '공원 화장실', first);
+  check('변기탐지: 가장 가까운 변기를 안내', first === '공원 화장실', first);
   const seen = new Set([first]); for (let i = 0; i < 3; i++) { await page.click('#sosNext'); seen.add(await page.innerText('#sosName')); }
-  check('구조 신청: 2명 이상 신고된 변기는 후보에서 제외', !seen.has('신고된 화장실'), [...seen].join(', '));
-  check('구조 신청: 길찾기 링크 3종 생성', (await page.getAttribute('#sosKakao', 'href') || '').includes('map.kakao.com') && (await page.getAttribute('#sosGoogle', 'href') || '').includes('google.com/maps'));
+  check('변기탐지: 2명 이상 신고된 변기는 후보에서 제외', !seen.has('신고된 화장실'), [...seen].join(', '));
+  check('변기탐지: 길찾기 링크 3종 생성', (await page.getAttribute('#sosKakao', 'href') || '').includes('map.kakao.com') && (await page.getAttribute('#sosGoogle', 'href') || '').includes('google.com/maps'));
   await page.click('#sosClose');
 
   await page.evaluate(() => document.querySelectorAll('.tmark')[0].click()); await page.waitForTimeout(500);
@@ -82,7 +82,12 @@ try {
 
   await page.click('#profBtn'); await page.waitForTimeout(600);
   check('탐험가 수첩: 도감에 방문한 변기 표시', (await page.innerText('#dex')).includes('공원 화장실'));
+  await page.fill('#nickInput', '점검탐험가'); await page.click('#nickSave'); await page.click('#avatars button[data-a="🦖"]'); await page.waitForTimeout(200);
+  check('수첩: 닉네임 변경과 아이콘 선택 반영', (await page.innerText('#meName')) === '점검탐험가' && (await page.innerText('#meAvatar')) === '🦖');
   await page.click('#profClose');
+  await page.click('#areaBtn'); await page.fill('#areaMsg', '아이콘 확인'); await page.press('#areaMsg', 'Enter'); await page.waitForTimeout(600);
+  check('채팅에 새 아이콘과 닉네임으로 표시', db.messages.at(-1).nick === '🦖 점검탐험가', db.messages.at(-1).nick);
+  await page.click('#areaClose');
 
   await page.click('#helpBtn'); await page.click('.htab[data-htab=guide]');
   check('도움말: 사용법 탭 표시', await page.isVisible('#htab-guide'));

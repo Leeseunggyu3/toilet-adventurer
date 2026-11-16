@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#1b2a3a">
 <title>Toilet Adventurer — 변기 탐험가</title>
-<meta name="description" content="변기 탐험가가 되어 동네 화장실을 발견·검증하고 레벨을 올리는 지도 게임. 급할 땐 구조 신청 버튼 하나.">
+<meta name="description" content="변기 탐험가가 되어 동네 화장실을 발견·검증하고 레벨을 올리는 지도 게임. 급할 땐 변기탐지 버튼 하나.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="vendor/leaflet.css" crossorigin="">
 <link rel="stylesheet" href="style.css?v=1794808638">
@@ -21,7 +21,7 @@
   </div>
   <div class="hud-right">
     <div class="coin">💰 <b id="coins">0</b></div>
-    <div class="lvl">Lv.<b id="level">1</b> <span class="xpbar"><i id="xpfill"></i></span></div>
+    <div class="lvl">변기력 <b id="level">0</b> <span class="xpbar"><i id="xpfill"></i></span></div>
   </div>
 </header>
 
@@ -35,8 +35,8 @@
   <button class="fab" id="helpBtn" title="튜토리얼 · 사용법">❓</button>
 </div>
 
-<!-- 구조 신청 버튼 -->
-<button id="sosBtn">🚨 구조 신청</button>
+<!-- 변기탐지 버튼 -->
+<button id="sosBtn">📡 변기탐지</button>
 
 <!-- 하단 시트 -->
 <div id="sheet" class="sheet hidden">
@@ -50,10 +50,10 @@
   </div>
   <!-- 변기 레벨 카드 -->
   <div class="tlevel">
-    <div class="tl-badge"><span>Lv</span><b id="tlLv">1</b></div>
+    <div class="tl-badge"><span>등급</span><b id="tlLv">1</b></div>
     <div class="tl-info">
       <div class="tl-bar"><i id="tlFill"></i></div>
-      <div class="tl-meta"><span id="tlVisits">방문 0회</span> · <span id="tlExp">탐험가 0명</span> · <span id="tlMine">나 0회</span></div>
+      <div class="tl-meta"><span id="tlPower">변기력 0</span> · <span id="tlVisits">방문 0회</span> · <span id="tlExp">탐험가 0명</span> · <span id="tlMine">나 0회</span></div>
       <div class="tl-first" id="tlFirst"></div>
     </div>
   </div>
@@ -105,7 +105,7 @@
     <button class="x" id="areaClose">✕</button>
   </div>
   <div class="chips">
-    <button data-q="이 근처에 지금 열린 화장실 어디 있어요? 🚨">구조 요청! 어디?</button>
+    <button data-q="이 근처에 지금 열린 화장실 어디 있어요? 🚨">변기탐지 요청!</button>
     <button data-q="깨끗한 화장실 추천해주세요 ✨">깨끗한 곳 추천</button>
     <button data-q="휴지 있는 곳 아시는 분? 🧻">휴지 있는 곳?</button>
   </div>
@@ -124,7 +124,11 @@
     <div><h2>🧭 탐험가 수첩</h2><div class="meta" id="profRank"></div></div>
     <button class="x" id="profClose">✕</button>
   </div>
-  <div class="nickrow"><input id="nickInput" maxlength="20"><button id="nickSave">저장</button></div>
+  <div class="me-card"><div class="me-avatar" id="meAvatar">🚽</div><div><div class="me-name" id="meName"></div><div class="me-sub" id="mePower"></div></div></div>
+  <div class="report-title">닉네임 바꾸기</div>
+  <div class="nickrow"><input id="nickInput" maxlength="16" placeholder="새 닉네임"><button id="nickSave">변경</button></div>
+  <div class="report-title">프로필 아이콘 고르기</div>
+  <div class="avatars" id="avatars"></div>
   <div class="stats3">
     <div><b id="stToilets">0</b><span>발견한 변기</span></div>
     <div><b id="stVisits">0</b><span>총 방문</span></div>
@@ -135,7 +139,7 @@
   <div class="dex" id="dex"></div>
 </div>
 
-<!-- 구조 신청 결과 카드 -->
+<!-- 변기탐지 결과 카드 -->
 <div id="sos" class="sheet hidden">
   <div class="grip"></div>
   <div class="sos-head">
@@ -153,7 +157,7 @@
     <button id="sosNext">다음 후보 →</button>
     <button id="sosClose">닫기</button>
   </div>
-  <p class="tiny">구조 신청 화면에는 광고가 없습니다. 도착하면 "도착 인증"으로 다음 사람을 도와주세요.</p>
+  <p class="tiny">변기탐지 화면에는 광고가 없습니다. 도착하면 "도착 인증"으로 다음 사람을 도와주세요.</p>
 </div>
 
 <!-- 등록 다이얼로그 -->
@@ -212,12 +216,13 @@
   </div>
   <div id="htab-guide" class="hidden">
     <div class="guide">
-      <details open><summary>🚨 구조 신청</summary><p>지금 급할 때 누르는 버튼. 내 위치에서 가장 가까운 화장실을 거리·도보 시간과 함께 보여주고, 카카오맵·네이버지도·구글맵 길찾기로 바로 넘어갑니다. "잠김"으로 보고된 곳은 제외되고, "다음 후보"로 다른 곳도 볼 수 있어요.</p></details>
-      <details><summary>🚻 변기 핀과 변기 레벨</summary><p>지도의 핀 하나가 변기 하나입니다. 핀을 누르면 상태, 길찾기, 변기 레벨이 나와요. 탐험가들이 도착 인증을 할수록 변기 경험치가 쌓여 레벨이 오르고, 핀에 레벨 숫자가 붙습니다. 초록 핀은 최근 "열려있음" 보고, 회색은 "잠김" 보고, 주황은 사용자가 등록한 곳입니다.</p></details>
-      <details><summary>✅ 도착 인증</summary><p>변기 50m 안에서 누르면 방문이 기록됩니다. 한 변기당 하루 1번. 내 코인 +30, 변기 경험치도 오릅니다. 아무도 인증하지 않은 변기의 첫 인증자는 "1호 탐험가"로 기록돼요.</p></details>
+      <details open><summary>📡 변기탐지</summary><p>지금 급할 때 누르는 버튼. 내 위치에서 가장 가까운 화장실을 거리·도보 시간과 함께 보여주고, 카카오맵·네이버지도·구글맵 길찾기로 바로 넘어갑니다. "잠김"으로 보고된 곳은 제외되고, "다음 후보"로 다른 곳도 볼 수 있어요.</p></details>
+      <details><summary>🚻 변기 핀과 변기 레벨</summary><p>지도의 핀 하나가 변기 하나입니다. 핀을 누르면 상태, 길찾기, 변기 레벨이 나와요. 탐험가들이 도착 인증을 할수록 그 변기의 변기력이 쌓여 등급이 오르고, 핀에 등급 숫자가 붙습니다. 초록 핀은 최근 "열려있음" 보고, 회색은 "잠김" 보고, 주황은 사용자가 등록한 곳입니다.</p></details>
+      <details><summary>✅ 도착 인증</summary><p>변기 50m 안에서 누르면 방문이 기록됩니다. 한 변기당 하루 1번. 내 코인과 변기력 +30, 그 변기의 변기력도 오릅니다. 아무도 인증하지 않은 변기의 첫 인증자는 "1호 탐험가"로 기록돼요.</p></details>
       <details><summary>🧻 상태 보고</summary><p>열림/잠김, 휴지, 청결, 줄 길이를 버튼 하나로 보고합니다. 현장(150m 안)에서 보고하면 +10, 멀리서는 +3. 하루 3번 보고하면 일일 퀘스트 보너스 +60.</p></details>
       <details><summary>💬 변기 이야기 · 동네 광장</summary><p>변기 이야기는 그 변기 전용 채팅, 동네 광장(💬 버튼)은 내 주변 약 2km 탐험가들과의 채팅입니다. 질문은 노란 말풍선으로 표시되고, 답글을 달면 +5. 질문한 사람이 "도움됐어요"를 누르면 답한 사람에게 +15. 개인정보나 정확한 집 위치는 올리지 마세요.</p></details>
-      <details><summary>📍 🎯 ➕ 🧭 버튼</summary><p>📍 내 위치로 이동 · 🎯 출동 미션(근처 변기까지 가서 인증하면 보너스) · ➕ 지도에 없는 화장실 등록(+50, 사유지는 등록 금지) · 🧭 탐험가 수첩(닉네임, 변기 도감, 뱃지).</p></details>
+      <details><summary>📍 🎯 ➕ 🧭 버튼</summary><p>📍 내 위치로 이동 · 🎯 출동 미션(근처 변기까지 가서 인증하면 보너스) · ➕ 지도에 없는 화장실 등록(+50, 사유지는 등록 금지) · 🧭 탐험가 수첩(닉네임 변경, 프로필 아이콘, 변기 도감, 뱃지).</p></details>
+      <details><summary>⚡ 변기력과 등급</summary><p>변기력은 탐험가의 힘입니다. 보고, 인증, 등록, 채팅으로 쌓이고 4급에서 시작해 3급, 준2급, 2급, 준1급, 1급, 특급 변기 탐험가로 승급합니다. 변기에도 변기력이 있어서, 많은 탐험가가 찾을수록 그 변기의 등급이 오릅니다.</p></details>
       <details><summary>🛠️ 위치가 안 잡혀요</summary><p>인스타·카톡 등 앱 안에서 열린 브라우저는 위치를 쓸 수 없습니다. 크롬이나 사파리로 직접 열어주세요. 그래도 안 되면 주소창 자물쇠 → 권한 → 위치를 "허용"으로 바꾸고 📍를 누르세요.</p></details>
     </div>
   </div>

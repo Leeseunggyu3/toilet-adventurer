@@ -23,13 +23,17 @@
   const enc = encodeURIComponent;
 
   // ===== 레벨/랭크 =====
-  const RANKS = [[0, '수습 화장실 지킴이'], [100, '동네 화장실 지킴이'], [400, '구역 순찰대장'], [1000, '시티 레인저'], [2500, '방광의 수호자'], [6000, '전설의 화장실 마스터']];
+  const RANKS = [[0, '4급 변기 탐험가'], [100, '3급 변기 탐험가'], [400, '준2급 변기 탐험가'], [1000, '2급 변기 탐험가'], [2500, '준1급 변기 탐험가'], [6000, '1급 변기 탐험가'], [15000, '특급 변기 탐험가']];
   function refreshHUD() {
     $('coins').textContent = Store.coins.toLocaleString();
-    const lvl = Math.floor(Math.sqrt(Store.xp / 50)) + 1, cur = (lvl - 1) ** 2 * 50, nxt = lvl ** 2 * 50;
-    $('level').textContent = lvl; $('xpfill').style.width = `${((Store.xp - cur) / (nxt - cur)) * 100}%`;
-    let r = RANKS[0][1]; for (const [x, n] of RANKS) if (Store.xp >= x) r = n;
-    $('rankLabel').textContent = r;
+    // 변기력(누적 경험치)과 등급. 게이지는 다음 등급까지 남은 정도
+    let i = 0; for (let j = 0; j < RANKS.length; j++) if (Store.xp >= RANKS[j][0]) i = j;
+    const cur = RANKS[i][0], nxt = RANKS[i + 1] ? RANKS[i + 1][0] : null;
+    $('level').textContent = Store.xp.toLocaleString();
+    $('xpfill').style.width = nxt ? `${((Store.xp - cur) / (nxt - cur)) * 100}%` : '100%';
+    if (window._lastRank !== undefined && i > window._lastRank) setTimeout(() => toast(`⚡ 승급! ${RANKS[i][1]}`, 3500), 1900);
+    window._lastRank = i;
+    $('rankLabel').textContent = RANKS[i][1];
   }
   function reward(c, why) { Store.earn(c); refreshHUD(); toast(`+${c}💰 ${why}`); }
 
@@ -154,7 +158,7 @@
   };
   $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); window.Backend.postReport(sel.id, 'flagged', 1).catch(() => {}); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
 
-  // ===== 구조 신청 =====
+  // ===== 변기탐지 =====
   $('sosBtn').onclick = () => {
     if (!me) { toast('내 위치를 찾는 중…'); locate(true); return; }
     sosList = [...toilets.values()].filter(t => !t.flagged && Store.fresh(t.id, 'open', 6) !== 0)
@@ -214,7 +218,7 @@
   $('locBtn').onclick = () => locate(false);
 
   // ===== 서버 공유: 상태 보고 · 신고 · 사용자 등록 화장실 =====
-  const FLAG_HIDE = 2; // 서로 다른 탐험가 2명 이상이 "없음" 신고하면 구조 신청 후보에서 제외
+  const FLAG_HIDE = 2; // 서로 다른 탐험가 2명 이상이 "없음" 신고하면 변기탐지 후보에서 제외
   let syncBusy = false, lastSync = 0;
   async function syncShared(force) {
     const SB = window.Backend;
@@ -257,7 +261,7 @@
     $('tlLv').textContent = s.level;
     const cur = (s.level - 1) ** 2 * 25, nxt = s.level ** 2 * 25;
     $('tlFill').style.width = `${Math.min(100, ((s.xp - cur) / (nxt - cur)) * 100)}%`;
-    $('tlVisits').textContent = `방문 ${s.visits}회`; $('tlExp').textContent = `탐험가 ${s.explorers}명`; $('tlMine').textContent = `나 ${s.mine}회`;
+    $('tlPower').textContent = `변기력 ${s.xp}`; $('tlVisits').textContent = `방문 ${s.visits}회`; $('tlExp').textContent = `탐험가 ${s.explorers}명`; $('tlMine').textContent = `나 ${s.mine}회`;
     $('tlFirst').textContent = s.first_nick ? `🏁 1호 탐험가: ${s.first_nick}` : '🏁 아직 아무도 인증하지 않은 미개척 변기! 첫 탐험가가 되어보세요';
   }
   // 마커에 레벨 뱃지
@@ -279,7 +283,7 @@
         const prev = statsCache.get(sel.id);
         statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
         if (s.visits === 1) { reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
-        if (prev && s.level > prev.level) { reward(20, `🎉 변기 레벨업! Lv.${s.level}`); }
+        if (prev && s.level > prev.level) { reward(20, `⚡ 변기 등급 상승! ${s.level}등급`); }
         if (s.mine >= 10) unlock('regular');
       } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     }
@@ -348,7 +352,7 @@
   function unlock(k) { const u = unlocked(); if (u[k]) return; u[k] = 1; try { localStorage.setItem('ghc-badges', JSON.stringify(u)); } catch (e) {} toast(`🏅 뱃지 획득: ${BADGES[k]}`, 2500); }
   $('profBtn').onclick = async () => {
     closeSheets(); $('profile').classList.remove('hidden');
-    $('nickInput').value = B.me().nick; $('profRank').textContent = $('rankLabel').textContent;
+    renderMe();
     let v = []; try { v = await B.myVisits(); } catch (e) {}
     const total = v.reduce((a, x) => a + x.count, 0);
     $('stToilets').textContent = v.length; $('stVisits').textContent = total; $('stCoins').textContent = Store.coins.toLocaleString();
@@ -358,13 +362,27 @@
     $('dex').innerHTML = v.length ? v.map(x => `<div><span>🚻 ${esc(x.toilet_name || x.toilet_id)}</span><small>${x.count}회 · ${ago(x.last)}</small></div>`).join('') : '<div class="empty">아직 도감이 비어 있어요. 도착 인증으로 첫 변기를 등록하세요!</div>';
   };
   $('profClose').onclick = () => $('profile').classList.add('hidden');
-  $('nickSave').onclick = () => { const n = $('nickInput').value.trim().slice(0, 20); if (!n) return; B.setNick(n); toast('닉네임 저장!'); };
+  const AVATARS = ['🚽', '🧻', '🪠', '🧼', '🚿', '🛁', '🧽', '🪣', '💩', '🧴', '🚰', '💧', '🫧', '🧭', '🗺️', '🔦', '🏕️', '🥾', '🎒', '⛑️', '🦝', '🐸', '🐧', '🦆', '🐙', '🦖', '🐢', '🦊', '👻', '👽', '🤖', '🥷', '🧙', '🦸', '🧑‍🚀', '🕵️'];
+  function renderMe() {
+    const m = B.me();
+    $('meAvatar').textContent = m.avatar; $('meName').textContent = m.nick;
+    $('mePower').textContent = `${$('rankLabel').textContent} · 변기력 ${Store.xp.toLocaleString()}`;
+    $('profRank').textContent = '아이콘과 닉네임은 채팅과 1호 탐험가 기록에 표시돼요';
+    $('nickInput').value = m.nick;
+    $('avatars').innerHTML = AVATARS.map(x => `<button class="${x === m.avatar ? 'on' : ''}" data-a="${x}">${x}</button>`).join('');
+    $('avatars').querySelectorAll('button').forEach(b => b.onclick = () => { B.setAvatar(b.dataset.a); renderMe(); toast(`프로필 아이콘 변경: ${b.dataset.a}`); });
+  }
+  $('nickSave').onclick = () => {
+    const n = $('nickInput').value.replace(/\s+/g, ' ').trim().slice(0, 16);
+    if (n.length < 2) return toast('닉네임은 2글자 이상으로 해주세요');
+    B.setNick(n); renderMe(); toast(`닉네임 변경: ${n}`);
+  };
 
   // ---- 도움말: 튜토리얼 / 사용법 ----
   const TUT = [
     ['🧭', '당신은 변기 탐험가', '이 지도의 핀 하나하나가 변기입니다. 동네 변기를 발견하고, 방문하고, 기록을 남기는 것이 탐험가의 일이에요.'],
-    ['🚨', '급하면 구조 신청', '아래 빨간 "구조 신청" 버튼을 누르면 가장 가까운 화장실과 길찾기가 바로 나옵니다. 급할 땐 이것 하나만 기억하세요.'],
-    ['✅', '도착하면 인증', '변기 50m 안에서 "도착 인증"을 누르면 코인을 받고, 그 변기의 경험치가 올라 레벨이 오릅니다. 첫 인증자는 1호 탐험가!'],
+    ['📡', '급하면 변기탐지', '아래 "변기탐지" 버튼을 누르면 가장 가까운 화장실과 길찾기가 바로 나옵니다. 급할 땐 이것 하나만 기억하세요.'],
+    ['✅', '도착하면 인증', '변기 50m 안에서 "도착 인증"을 누르면 코인과 변기력을 얻고, 그 변기의 변기력도 쌓여 등급이 오릅니다. 첫 인증자는 1호 탐험가!'],
     ['🧻', '상태를 알려주세요', '휴지 있음, 잠김, 깨끗함 같은 상태를 버튼 하나로 보고하면 다음 사람이 헛걸음하지 않아요. 보고할 때마다 코인.'],
     ['💬', '동네 탐험가와 대화', '변기마다 "변기 이야기" 채팅이 있고, 💬 버튼은 주변 2km "동네 광장"입니다. 질문에 답해 주면 보상을 받아요.'],
     ['🚀', '준비 완료', '먼저 📍로 내 위치를 잡고, 가까운 핀을 눌러 보세요. 이 안내는 ❓ 버튼에서 언제든 다시 볼 수 있습니다.'],
