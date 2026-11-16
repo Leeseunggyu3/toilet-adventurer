@@ -32,6 +32,17 @@ const Store = (() => {
     // 사용자 등록 화장실
     addToilet(t) { s.toilets[t.id] = t; save(); },
     userToilets() { return Object.values(s.toilets); },
+    // 서버에서 받은 보고를 병합 (더 최신인 것만 반영). 바뀐 게 있으면 true
+    mergeRemote(rows) {
+      let changed = false;
+      for (const x of rows) {
+        const r = s.reports[x.toilet_id] || (s.reports[x.toilet_id] = {});
+        const tms = new Date(x.at).getTime();
+        if (!r[x.k] || r[x.k].t < tms) { r[x.k] = { v: x.v, t: tms }; changed = true; }
+      }
+      if (changed) save();
+      return changed;
+    },
     flag(id) { const t = s.toilets[id]; if (t) { t.flagged = true; save(); } else { s.reports[id] = Object.assign(s.reports[id] || {}, { flagged: { v: 1, t: Date.now() } }); save(); } },
 
     // 도착 인증 (하루 1회/장소)

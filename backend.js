@@ -34,6 +34,9 @@
     async recordVisit(toilet_id, toilet_name) { this.db.visits.push({ toilet_id, toilet_name, user_id: uid, nick: getNick(), at: new Date().toISOString() }); this._save(); return this.toiletStats(toilet_id); }
     async toiletStats(toilet_id) { const v = this.db.visits.filter(x => x.toilet_id === toilet_id); return statsFrom(v); }
     async myVisits() { return groupMine(this.db.visits.filter(v => v.user_id === uid)); }
+    // 데모 모드에서는 보고/등록 공유가 없다 (store.js의 로컬 저장만 사용)
+    async postReport() {} async recentReports() { return []; } async flagCounts() { return {}; }
+    async addToilet() {} async toiletsIn() { return []; }
   }
 
   // ---------- Supabase ----------
@@ -55,6 +58,20 @@
     async recordVisit(toilet_id, toilet_name) { await this._post('visits', { toilet_id, toilet_name, user_id: uid, nick: getNick() }); return this.toiletStats(toilet_id); }
     async toiletStats(toilet_id) { return statsFrom(await this._get(`visits?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=user_id,nick,at&order=at.asc&limit=2000`)); }
     async myVisits() { return groupMine(await this._get(`visits?user_id=eq.${uid}&select=toilet_id,toilet_name,at&order=at.desc&limit=1000`)); }
+    async postReport(toilet_id, k, v) { return this._post('reports', { toilet_id, k, v, user_id: uid, nick: getNick() }); }
+    // 최근 12시간 상태 보고 (신고 제외). 최신순이라 병합 시 가장 새 값이 남는다
+    async recentReports() {
+      const since = new Date(Date.now() - 12 * 3600e3).toISOString();
+      return this._get(`reports?k=neq.flagged&at=gte.${encodeURIComponent(since)}&select=toilet_id,k,v,at&order=at.desc&limit=1000`);
+    }
+    // "화장실 없음" 신고: 변기별 서로 다른 신고자 수
+    async flagCounts() {
+      const rows = await this._get(`reports?k=eq.flagged&select=toilet_id,user_id&limit=2000`);
+      const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);
+      const out = {}; for (const id in m) out[id] = m[id].size; return out;
+    }
+    async addToilet(t) { return this._post('toilets', { id: t.id, lat: t.lat, lng: t.lng, name: t.name, access: t.tags?.access || 'yes', user_id: uid, nick: getNick() }); }
+    async toiletsIn(lat, lng, d) { return this._get(`toilets?lat=gte.${lat - d}&lat=lte.${lat + d}&lng=gte.${lng - d}&lng=lte.${lng + d}&select=id,lat,lng,name,access,nick&limit=500`); }
   }
 
   // 변기 XP: 방문 1회 = 10xp, 서로 다른 탐험가 1명 = +15xp 보너스

@@ -57,7 +57,8 @@
     const tg = t.tags || {}, bits = [];
     if (tg.fee === 'yes') bits.push('유료'); if (tg.wheelchair === 'yes') bits.push('♿ 휠체어'); if (tg.opening_hours) bits.push(tg.opening_hours);
     if (tg.unisex === 'yes') bits.push('남녀공용'); if (tg.changing_table === 'yes') bits.push('기저귀교환대');
-    if (t.src === 'user') bits.push(t.flagged ? '⚠️ 신고됨' : '사용자 등록 (검증 대기)');
+    if (t.src === 'user') bits.push(t.by ? `${t.by} 님이 등록` : '사용자 등록');
+    if (t.flagged) bits.push('⚠️ 없다는 신고 있음');
     return bits.join(' · ');
   }
 
@@ -136,6 +137,7 @@
     if (!sel) return;
     const near = me && dist(me[0], me[1], sel.lat, sel.lng) < 150;
     Store.report(sel.id, b.dataset.k, +b.dataset.v);
+    window.Backend.postReport(sel.id, b.dataset.k, +b.dataset.v).catch(e => toast('보고 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     renderStatus(sel); restyle();
     document.querySelectorAll('.reports button').forEach(x => { if (x.dataset.k === b.dataset.k) x.classList.toggle('done', x === b); });
     reward(near ? 10 : 3, near ? '현장 보고!' : '보고 (현장이면 10💰)');
@@ -150,7 +152,7 @@
     if (mission && mission.id === sel.id) { reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
     openSheet(sel);
   };
-  $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
+  $('flagBtn').onclick = () => { if (!sel) return; Store.flag(sel.id); window.Backend.postReport(sel.id, 'flagged', 1).catch(() => {}); toast('신고 접수. 여러 명이 신고하면 지도에서 내려가요'); };
 
   // ===== 구조 신청 =====
   $('sosBtn').onclick = () => {
@@ -183,6 +185,7 @@
     const c = map.getCenter(); const name = $('addName').value.trim() || '사용자 등록 화장실';
     const t = { id: 'u' + Date.now(), lat: c.lat, lng: c.lng, name, src: 'user', tags: { access: $('addFree').checked ? 'yes' : 'customers' } };
     Store.addToilet(t); toilets.set(t.id, t); addMarker(t);
+    window.Backend.addToilet(t).catch(e => toast('등록 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     $('addCancel').onclick(); $('addName').value = '';
     reward(50, '등록 완료! 검증되면 +50 더');
   };
@@ -209,6 +212,28 @@
   }
 
   $('locBtn').onclick = () => locate(false);
+
+  // ===== 서버 공유: 상태 보고 · 신고 · 사용자 등록 화장실 =====
+  const FLAG_HIDE = 2; // 서로 다른 탐험가 2명 이상이 "없음" 신고하면 구조 신청 후보에서 제외
+  let syncBusy = false, lastSync = 0;
+  async function syncShared(force) {
+    const SB = window.Backend;
+    if (SB.demo || syncBusy || (!force && Date.now() - lastSync < 20000)) return;
+    syncBusy = true; lastSync = Date.now();
+    try {
+      const c = map.getCenter();
+      const [reps, flags, ut] = await Promise.all([SB.recentReports(), SB.flagCounts(), SB.toiletsIn(c.lat, c.lng, 0.05)]);
+      for (const r of ut) if (!toilets.has(r.id)) { const t = { id: r.id, lat: r.lat, lng: r.lng, name: r.name, src: 'user', by: r.nick, tags: { access: r.access } }; toilets.set(t.id, t); addMarker(t); }
+      for (const t of toilets.values()) t.flagged = (flags[t.id] || 0) >= FLAG_HIDE;
+      const changed = Store.mergeRemote(reps);
+      if (changed || ut.length) restyle();
+      if (changed && sel && !$('sheet').classList.contains('hidden')) renderStatus(sel);
+    } catch (e) { console.warn('sync failed', e); }
+    syncBusy = false;
+  }
+  map.on('moveend', () => syncShared(false));
+  setInterval(() => { if (!document.hidden) syncShared(false); }, 45000);
+  setTimeout(() => syncShared(true), 3000);
 
   // =====================================================================
   // 커뮤니티: 변기 레벨 · 변기 이야기 · 동네 광장 · 탐험가 수첩

@@ -1,5 +1,5 @@
 // 최소 서비스워커: 앱 셸 캐시 (오프라인에서도 UI는 뜨게)
-const C = 'ghc-shell-v4';
+const C = 'ghc-shell-v5';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './vendor/leaflet.js', './vendor/leaflet.css'];
 self.addEventListener('install', e => e.waitUntil(caches.open(C).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== C).map(k => caches.delete(k)))).then(() => self.clients.claim())));
