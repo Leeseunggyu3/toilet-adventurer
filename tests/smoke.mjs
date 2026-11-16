@@ -21,16 +21,23 @@ page.on('pageerror', e => errors.push(String(e)));
 await page.route('**/overpass-api.de/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(osm) }));
 await page.route('**/tile.openstreetmap.org/**', r => r.abort());
 // 서버를 같은 주소의 가짜로 바꿔치기
-await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: `window.GHC_CONFIG={SUPABASE_URL:'${BASE}/sb',SUPABASE_ANON_KEY:'test'};` }));
+await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: `window.GHC_CONFIG={SUPABASE_URL:'${BASE}/sb',SUPABASE_ANON_KEY:'test',GOOGLE_LOGIN:true};` }));
+await page.route('**/sb/auth/v1/**', r => {
+  const u = r.request().url();
+  if (u.includes('/user')) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'auth-1', email: 'tester@example.com' }) });
+  r.fulfill({ status: 204, body: '' });
+});
 await page.route('**/sb/rest/v1/**', r => {
   const q = r.request(), u = new URL(q.url()), table = u.pathname.split('/rest/v1/')[1];
   if (q.method() === 'POST') {
+    if (table.startsWith('accounts')) { const b = JSON.parse(q.postData()); db.account = { state: b.state, updated_at: b.updated_at }; return r.fulfill({ status: 201, body: '' }); }
     if (table === 'rpc/save_profile') { const b = JSON.parse(q.postData()); (db.profiles || (db.profiles = {}))[b.p_user] = { data: b.p_data, secret: b.p_secret }; return r.fulfill({ status: 204, body: '' }); }
     if (table.startsWith('rpc/')) return r.fulfill({ status: 204, body: '' });
     const row = Object.assign({ id: 'id' + Math.random().toString(36).slice(2), at: new Date().toISOString(), helpful: 0 }, JSON.parse(q.postData() || '{}'));
     (db[table] || (db[table] = [])).push(row);
     return r.fulfill({ status: 201, body: '' });
   }
+  if (table === 'accounts') return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(db.account ? [db.account] : []) });
   if (table === 'profiles') { const id = (u.searchParams.get('user_id') || '').replace('eq.', ''); const p = (db.profiles || {})[id]; return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(p ? [{ user_id: id, data: p.data }] : []) }); }
   let rows = db[table] || [];
   const ch = u.searchParams.get('channel'); if (ch) rows = rows.filter(x => 'eq.' + x.channel === ch);
@@ -123,6 +130,22 @@ try {
   check('프로필 조회: 닉네임을 누르면 상대의 칭호와 경지가 보임', peek.includes('열 개의 문을 연 자') && peek.includes('다른탐험가') && peek.includes('소용돌이'), peek.replace(/\n/g, ' '));
   check('프로필 조회: 상대의 스티커와 획득 칭호 목록 표시', (await page.locator('#peekBoard .stk').count()) === 1 && (await page.locator('#peekTitles .ttl').count()) === 2);
   await page.click('#peekClose');
+
+  // ---- 게스트 → 구글 로그인 → 다른 기록 불러오기 ----
+  await page.click('#profBtn'); await page.waitForTimeout(300);
+  check('계정: 처음엔 게스트로 표시되고 구글 로그인 버튼이 있음', (await page.innerText('#acct')).includes('게스트') && await page.isVisible('#acctIn'));
+  const uidBefore = await page.evaluate(() => localStorage.getItem('ghc-uid'));
+  await page.goto(BASE + '/index.html?login=1#access_token=TESTTOKEN&refresh_token=R1&expires_in=3600&token_type=bearer'); await page.waitForTimeout(2500);
+  check('계정: 로그인하면 게스트 기록이 계정에 저장됨', !!db.account && db.account.state['ghc-uid'] === uidBefore && !!db.account.state['ghc-ach']);
+  check('계정: 주소에서 토큰이 지워짐', !(await page.evaluate(() => location.hash)).includes('access_token'));
+  await page.click('#profBtn'); await page.waitForTimeout(400);
+  check('계정: 수첩에 로그인한 이메일 표시', (await page.innerText('#acct')).includes('tester@example.com'));
+  // 다른 기기에서 만든 기록이 계정에 있는 상황
+  db.account = { updated_at: new Date().toISOString(), state: { 'ghc-uid': 'xotherdevice1', 'ghc-secret': 's'.repeat(48), 'ghc-nick': '옛폰탐험가', 'ghc-avatar': '🐙', 'ghc-v0': JSON.stringify({ coins: 777, xp: 1500, reports: {}, toilets: {}, verified: {}, daily: { day: '', done: 0 } }), 'ghc-tut-done': '1' } };
+  await page.goto(BASE + '/index.html?login=2#access_token=TESTTOKEN&refresh_token=R1&expires_in=3600&token_type=bearer'); await page.waitForTimeout(2500);
+  check('계정: 기록이 다르면 어느 쪽을 쓸지 묻는 창이 뜸', await page.isVisible('#acctDlg') && (await page.innerText('#pickCloud')).includes('옛폰탐험가'));
+  await page.click('#useCloud'); await page.waitForTimeout(2500);
+  check('계정: 계정 기록을 불러오면 닉네임·코인·경지가 복원됨', (await page.evaluate(() => localStorage.getItem('ghc-uid'))) === 'xotherdevice1' && (await page.innerText('#coins')) === '777' && (await page.innerText('#rankLabel')) === '소용돌이', await page.innerText('#rankLabel'));
 
   check('전체 흐름 중 자바스크립트 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 300));
 } catch (e) {

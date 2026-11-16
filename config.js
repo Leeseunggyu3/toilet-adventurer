@@ -4,4 +4,5 @@
 window.GHC_CONFIG = {
   SUPABASE_URL: 'https://tsokzvlszcodqqejsnoe.supabase.co',      // 예: 'https://abcdefgh.supabase.co'
   SUPABASE_ANON_KEY: 'sb_publishable_O9PHZVfHx20CFcMIPsQNtg_EN0_bjKU', // Project Settings → API → anon public
+  GOOGLE_LOGIN: false,   // Supabase에서 Google 로그인 설정을 마친 뒤 true로 바꾼다 (false면 로그인 버튼이 숨겨짐)
 };

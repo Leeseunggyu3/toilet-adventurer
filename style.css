@@ -174,3 +174,14 @@ a { color: inherit; text-decoration: none; }
 .ttl-st { font-size:24px; width:30px; text-align:center; flex:none; } .ttl-tx { flex:1; } .ttl-tx b { display:block; font-size:14px; } .ttl-tx small { display:block; font-size:12px; color:#667; margin-top:1px; }
 .ttl i { font-style:normal; font-size:11px; background:#7b5cff; color:#fff; padding:2px 8px; border-radius:999px; }
 .nicklink { cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; }
+
+/* 계정 */
+.acct { margin-top:8px; padding:11px 12px; border-radius:14px; background:#f6f7f9; border:1.5px solid #e2e5ea; display:flex; gap:10px; align-items:center; }
+.acct:empty { display:none; }
+.acct-in { flex:1; min-width:0; } .acct-in b { display:block; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .acct-in span { display:block; font-size:11.5px; color:#667; margin-top:2px; line-height:1.4; }
+.acct-btns { display:flex; flex-direction:column; gap:5px; flex:none; }
+.acct-btns button { padding:8px 12px; border-radius:10px; border:1.5px solid #d5d9e0; background:#fff; font-size:12.5px; font-weight:700; cursor:pointer; color:#1b2a3a; }
+.acct-btns button.g { background:#1b2a3a; color:#fff; border-color:#1b2a3a; padding:11px 14px; }
+.pick { border:1.5px solid #e2e5ea; border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+.pick small { display:block; font-size:11px; color:#889; } .pick b { display:block; font-size:16px; margin:2px 0; } .pick span { font-size:12px; color:#667; }
+#acctDlg .row button { font-size:13px; }

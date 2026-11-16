@@ -466,6 +466,57 @@
   $('peekClose').onclick = () => $('peek').classList.add('hidden');
   setTimeout(achCheck, 3500); // 이미 조건을 채운 칭호는 시작할 때 바로 지급
 
+  // =====================================================================
+  // 계정: 게스트 / 구글 로그인
+  // =====================================================================
+  const A = window.Auth;
+  let acctBusy = false, acctHold = false, lastSaved = '', lastSavedAt = 0;
+  function renderAcct() {
+    const el = $('acct'); if (!A.enabled) { el.innerHTML = ''; return; }
+    if (A.signedIn) {
+      el.innerHTML = `<div class="acct-in"><b>🔐 ${esc(A.email || '구글 계정')}</b><span id="acctNote">${lastSavedAt ? '계정에 저장됨 · ' + ago(new Date(lastSavedAt).toISOString()) : '로그인됨'}</span></div><div class="acct-btns"><button id="acctSave">지금 저장</button><button id="acctOut">로그아웃</button></div>`;
+      $('acctSave').onclick = () => saveAcct(true);
+      $('acctOut').onclick = async () => { await saveAcct(false); await A.signOut(); renderAcct(); toast('로그아웃했어요. 이 기기에는 기록이 그대로 남아 있어요', 3500); };
+    } else {
+      el.innerHTML = `<div class="acct-in"><b>게스트로 이용 중</b><span>기록이 이 기기에만 있어요. 로그인하면 기기를 바꿔도 이어집니다</span></div><div class="acct-btns"><button id="acctIn" class="g">구글로 로그인</button></div>`;
+      $('acctIn').onclick = () => A.signIn();
+    }
+  }
+  async function saveAcct(manual) {
+    if (!A.enabled || !A.signedIn || acctBusy || acctHold) return;
+    const st = A.localState(), sig = JSON.stringify(st);
+    if (!manual && sig === lastSaved) return;
+    acctBusy = true;
+    try { await A.saveAccount(st); lastSaved = sig; lastSavedAt = Date.now(); if (manual) toast('☁️ 계정에 저장했어요'); if (!$('profile').classList.contains('hidden')) renderAcct(); }
+    catch (e) { if (manual) toast('저장 실패: ' + String(e.message || e).slice(0, 120), 7000); else console.warn('account save', e); }
+    acctBusy = false;
+  }
+  async function afterSignIn() {
+    try {
+      await A.fetchUser();
+      const cloud = await A.loadAccount(), local = A.localState();
+      if (!cloud) { await saveAcct(false); toast(`🔐 로그인 완료. 지금까지의 기록을 계정에 연결했어요`, 4000); }
+      else if (cloud.state['ghc-uid'] === local['ghc-uid']) { lastSavedAt = new Date(cloud.updated_at).getTime(); await saveAcct(false); toast('🔐 로그인 완료', 2500); }
+      else {
+        acctHold = true;
+        const c = A.summary(cloud.state), l = A.summary(local);
+        $('pickCloud').innerHTML = `<small>계정에 저장된 기록</small><b>${esc(c.avatar)} ${esc(c.nick)}</b><span>변기력 ${c.xp.toLocaleString()} · ${ago(cloud.updated_at)} 저장</span>`;
+        $('pickLocal').innerHTML = `<small>이 기기의 기록</small><b>${esc(l.avatar)} ${esc(l.nick)}</b><span>변기력 ${l.xp.toLocaleString()}</span>`;
+        $('acctDlg').classList.remove('hidden');
+        $('useCloud').onclick = () => { A.applyState(cloud.state); location.reload(); };
+        $('useLocal').onclick = async () => { acctHold = false; $('acctDlg').classList.add('hidden'); await saveAcct(true); };
+      }
+    } catch (e) { toast('로그인 처리 실패: ' + String(e.message || e).slice(0, 120), 8000); }
+    renderAcct();
+  }
+  if (A.enabled) {
+    if (A.loginError) setTimeout(() => toast('로그인 실패: ' + String(A.loginError).slice(0, 120), 8000), 1500);
+    if (A.justSignedIn) setTimeout(afterSignIn, 800);
+    else if (A.signedIn) A.fetchUser().catch(() => {}).then(renderAcct);
+    setInterval(() => saveAcct(false), 60000);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) saveAcct(false); });
+  }
+
   // ---- 탐험가 수첩 ----
   const BADGES = { first: '🏁 1호 탐험가', regular: '🪑 단골 (한 변기 10회)', ten: '🔟 변기 10곳 발견', fifty: '5️⃣0️⃣ 변기 50곳 발견', helper: '🤝 동네 해결사', reporter: '📣 상태 보고 30회' };
   const unlocked = () => { try { return JSON.parse(localStorage.getItem('ghc-badges') || '{}'); } catch (e) { return {}; } };
@@ -484,6 +535,7 @@
   $('profClose').onclick = () => $('profile').classList.add('hidden');
   const AVATARS = ['🚽', '🧻', '🪠', '🧼', '🚿', '🛁', '🧽', '🪣', '💩', '🧴', '🚰', '💧', '🫧', '🧭', '🗺️', '🔦', '🏕️', '🥾', '🎒', '⛑️', '🦝', '🐸', '🐧', '🦆', '🐙', '🦖', '🐢', '🦊', '👻', '👽', '🤖', '🥷', '🧙', '🦸', '🧑‍🚀', '🕵️'];
   function renderMe() {
+    renderAcct();
     const m = B.me();
     achCheck();
     if (!deco) drawBoard($('myBoard'), myProfile(), ach.stickers, true);
