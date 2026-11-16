@@ -380,6 +380,7 @@
   function helpTab(name) {
     document.querySelectorAll('.htab').forEach(x => x.classList.toggle('on', x.dataset.htab === name));
     $('htab-tut').classList.toggle('hidden', name !== 'tut'); $('htab-guide').classList.toggle('hidden', name !== 'guide');
+    $('htab-fb').classList.toggle('hidden', name !== 'fb');
   }
   function openHelp(tab) { closeSheets(); $('help').classList.remove('hidden'); tutI = 0; renderTut(); helpTab(tab); }
   function closeHelp() { $('help').classList.add('hidden'); try { localStorage.setItem('ghc-tut-done', '1'); } catch (e) {} }
@@ -388,6 +389,16 @@
   $('helpClose').onclick = closeHelp;
   $('tutPrev').onclick = () => { if (tutI > 0) { tutI--; renderTut(); } };
   $('tutNext').onclick = () => { if (tutI < TUT.length - 1) { tutI++; renderTut(); } else closeHelp(); };
+  // 의견 보내기
+  const VERSION = '__VERSION__';
+  $('verLabel').textContent = VERSION.startsWith('__') ? '개발용' : VERSION;
+  $('fbSend').onclick = async () => {
+    const text = $('fbText').value.trim(); if (text.length < 3) return toast('내용을 조금만 더 적어주세요');
+    $('fbSend').disabled = true;
+    try { await B.postFeedback(text, VERSION); $('fbText').value = ''; toast('🙏 의견 고마워요! 개발자에게 전달됐어요', 3000); }
+    catch (e) { toast('전송 실패: ' + String(e.message || e).slice(0, 120), 7000); }
+    $('fbSend').disabled = false;
+  };
   // 첫 방문이면 튜토리얼 자동 표시
   let tutDone = false; try { tutDone = !!localStorage.getItem('ghc-tut-done'); } catch (e) {}
   if (!tutDone) setTimeout(() => openHelp('tut'), 1200);

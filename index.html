@@ -190,6 +190,7 @@
   <div class="tabs">
     <button class="htab tab on" data-htab="tut">튜토리얼</button>
     <button class="htab tab" data-htab="guide">사용법</button>
+    <button class="htab tab" data-htab="fb">의견 보내기</button>
   </div>
   <div id="htab-tut">
     <div class="tut-card">
@@ -202,6 +203,12 @@
       <button id="tutPrev">이전</button>
       <button id="tutNext" class="primary">다음</button>
     </div>
+  </div>
+  <div id="htab-fb" class="hidden">
+    <p class="fb-lead">버그, 불편한 점, 있으면 좋겠는 기능을 알려주세요. 개발자가 직접 읽습니다.</p>
+    <textarea id="fbText" maxlength="1000" placeholder="예: 우리 동네 화장실이 지도에 없어요 / 버튼이 겹쳐 보여요"></textarea>
+    <button class="verify" id="fbSend">보내기</button>
+    <p class="tiny">연락처 등 개인정보는 적지 마세요. 앱 버전 <span id="verLabel"></span></p>
   </div>
   <div id="htab-guide" class="hidden">
     <div class="guide">

@@ -37,6 +37,7 @@
     // 데모 모드에서는 보고/등록 공유가 없다 (store.js의 로컬 저장만 사용)
     async postReport() {} async recentReports() { return []; } async flagCounts() { return {}; }
     async addToilet() {} async toiletsIn() { return []; }
+    async postFeedback(text, version) { (this.db.feedback || (this.db.feedback = [])).push({ text, version, at: new Date().toISOString() }); this._save(); }
   }
 
   // ---------- Supabase ----------
@@ -70,6 +71,7 @@
       const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);
       const out = {}; for (const id in m) out[id] = m[id].size; return out;
     }
+    async postFeedback(text, version) { return this._post('feedback', { text, version, user_id: uid, nick: getNick(), ua: navigator.userAgent.slice(0, 200) }); }
     async addToilet(t) { return this._post('toilets', { id: t.id, lat: t.lat, lng: t.lng, name: t.name, access: t.tags?.access || 'yes', user_id: uid, nick: getNick() }); }
     async toiletsIn(lat, lng, d) { return this._get(`toilets?lat=gte.${lat - d}&lat=lte.${lat + d}&lng=gte.${lng - d}&lng=lte.${lng + d}&select=id,lat,lng,name,access,nick&limit=500`); }
   }

@@ -136,3 +136,7 @@ a { color: inherit; text-decoration: none; }
 .row button:disabled { opacity:.35; }
 .guide details { border-bottom:1px solid #eee; padding:12px 2px; } .guide summary { font-size:15px; font-weight:700; cursor:pointer; } .guide p { font-size:13.5px; line-height:1.65; color:#445; margin-top:8px; }
 #ctrls { bottom: 120px; gap: 8px; } .fab { width:44px; height:44px; font-size:20px; }
+
+.fb-lead { font-size:13.5px; color:#445; line-height:1.6; margin:12px 0 8px; }
+#fbText { width:100%; min-height:120px; padding:12px; border:1.5px solid #e2e5ea; border-radius:12px; font-size:15px; font-family:inherit; resize:vertical; }
+.htab { font-size:13px; padding:10px 4px; }
