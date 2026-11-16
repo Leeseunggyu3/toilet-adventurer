@@ -25,16 +25,6 @@
   // ===== 레벨/랭크 =====
   // 경지: 변기력이 쌓이면 물의 흐름처럼 깊어진다
   const RANKS = [[0, '잠든 물방울'], [100, '첫 물결'], [400, '고요한 수면'], [1000, '소용돌이'], [2500, '깊은 흐름'], [6000, '맑은 근원'], [15000, '무한수류']];
-  // 계통: 어떤 행동을 많이 하느냐에 따라 발현되는 탐험가의 성질
-  const STYLES = {
-    report: ['💧', '맑음', '변기의 상태를 꿰뚫어 보는 자. 상태 보고를 많이 할수록 깊어진다'],
-    visit:  ['👣', '발자국', '직접 걸어가 닿는 자. 도착 인증을 많이 할수록 깊어진다'],
-    talk:   ['🔔', '메아리', '말로 길을 여는 자. 이야기와 답변을 많이 할수록 깊어진다'],
-    found:  ['🕯️', '등불', '없던 곳을 밝히는 자. 화장실 등록과 1호 탐험으로 깊어진다'],
-  };
-  const styleCounts = () => { try { return JSON.parse(localStorage.getItem('ghc-style') || '{}'); } catch (e) { return {}; } };
-  function bump(k) { const c = styleCounts(); const before = myStyle(); c[k] = (c[k] || 0) + 1; try { localStorage.setItem('ghc-style', JSON.stringify(c)); } catch (e) {} const after = myStyle(); if (after && (!before || before[1] !== after[1])) setTimeout(() => toast(`${after[0]} 계통 발현: ${after[1]}`, 3500), 2200); }
-  function myStyle() { const c = styleCounts(); const total = Object.values(c).reduce((x, y) => x + y, 0); if (total < 5) return null; const top = Object.keys(STYLES).sort((x, y) => (c[y] || 0) - (c[x] || 0))[0]; return STYLES[top]; }
   function refreshHUD() {
     $('coins').textContent = Store.coins.toLocaleString();
     // 변기력(누적 경험치)과 등급. 게이지는 다음 등급까지 남은 정도
@@ -131,7 +121,7 @@
     renderStatus(t);
     navLinks(t, 'navKakao', 'navNaver', 'navGoogle');
     const vb = $('verifyBtn'); vb.disabled = !Store.canVerify(t.id);
-    vb.textContent = vb.disabled ? '✅ 오늘 이미 인증했어요' : '✅ 도착 인증 (50m 이내) +30💰';
+    vb.textContent = vb.disabled ? '✅ 오늘 이미 인증했어요' : `✅ 도착 인증 (${50 + rb('range')}m 이내) +${30 + rb('ver')}💰`;
     document.querySelectorAll('.reports button').forEach(b => { const f = Store.fresh(t.id, b.dataset.k, 12); b.classList.toggle('done', f !== null && String(f) === b.dataset.v); });
     map.panTo([t.lat, t.lng]);
   }
@@ -155,16 +145,17 @@
     window.Backend.postReport(sel.id, b.dataset.k, +b.dataset.v).catch(e => toast('보고 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     renderStatus(sel); restyle();
     document.querySelectorAll('.reports button').forEach(x => { if (x.dataset.k === b.dataset.k) x.classList.toggle('done', x === b); });
-    bump('report'); achEvent('rep');
-    reward(near ? 10 : 3, near ? '현장 보고!' : '보고 (현장이면 10💰)');
+    achEvent('rep');
+    reward((near ? 10 : 3) + rb('rep'), near ? '현장 보고!' : '보고 (현장이면 10💰)');
     checkDaily();
   });
   $('verifyBtn').onclick = () => {
     if (!sel) return;
     if (!me) return toast('위치를 먼저 켜주세요');
     const d = dist(me[0], me[1], sel.lat, sel.lng);
-    if (d > 50) return toast(`${fmtD(d)} 떨어져 있어요. 50m 안에서 인증!`);
-    Store.verify(sel.id); bump('visit'); achEvent('visit', sel.id); reward(30, '도착 인증!'); checkDaily();
+    const lim = 50 + rb('range');
+    if (d > lim) return toast(`${fmtD(d)} 떨어져 있어요. ${lim}m 안에서 인증!`);
+    Store.verify(sel.id); achEvent('visit', sel.id); reward(30 + rb('ver') + (new Date().getHours() < 5 ? rb('night') : 0), '도착 인증!'); checkDaily();
     if (mission && mission.id === sel.id) { reward(mission.bonus, '미션 완료!'); mission = null; $('mission').classList.add('hidden'); }
     openSheet(sel);
   };
@@ -203,7 +194,7 @@
     Store.addToilet(t); toilets.set(t.id, t); addMarker(t);
     window.Backend.addToilet(t).catch(e => toast('등록 공유 실패: ' + String(e.message || e).slice(0, 100), 6000));
     $('addCancel').onclick(); $('addName').value = '';
-    bump('found'); achEvent('reg');
+    achEvent('reg');
     reward(50, '등록 완료! 검증되면 +50 더');
   };
   for (const t of Store.userToilets()) { toilets.set(t.id, t); addMarker(t); }
@@ -214,7 +205,7 @@
     const cands = [...toilets.values()].filter(t => { const d = dist(me[0], me[1], t.lat, t.lng); return d > 120 && d < 900 && Store.canVerify(t.id); });
     if (!cands.length) return toast('900m 안에 미션 가능한 화장실이 없어요');
     const t = cands[(Math.random() * cands.length) | 0], d = dist(me[0], me[1], t.lat, t.lng);
-    mission = { id: t.id, bonus: 40 + Math.round(d / 20) };
+    mission = { id: t.id, bonus: 40 + Math.round(d / 20) + rb('mission') };
     $('missionText').textContent = `${t.name}까지 가서 도착 인증하면 +${mission.bonus}💰 (${fmtD(d)})`;
     $('mission').classList.remove('hidden');
     markers.get(t.id)?.setIcon(icon(t, true));
@@ -225,7 +216,7 @@
   // ===== 일일 퀘스트 =====
   function checkDaily() {
     const n = Store.dailyTick();
-    if (n === 3) reward(60, '일일 퀘스트 완료 (3회 보고)!');
+    if (n === 3) reward(60 + rb('daily'), '일일 퀘스트 완료 (3회 보고)!');
   }
 
   $('locBtn').onclick = () => locate(false);
@@ -295,7 +286,7 @@
         const s = await B.recordVisit(sel.id, sel.name);
         const prev = statsCache.get(sel.id);
         statsCache.set(sel.id, s); renderToiletLevel(s); markers.get(sel.id)?.setIcon(icon(sel));
-        if (s.visits === 1) { bump('found'); achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
+        if (s.visits === 1) { achEvent('first'); reward(40, '🏁 이 변기의 1호 탐험가!'); unlock('first'); }
         if (prev && s.level > prev.level) { reward(20, `⚡ 변기 등급 상승! ${s.level}등급`); }
         if (s.mine >= 10) unlock('regular');
       } catch (e) { console.error(e); toast('방문 기록 실패: ' + String(e.message || e).slice(0, 140), 9000); }
@@ -341,7 +332,7 @@
     const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
     try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { console.error(e); return toast('전송 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
-    bump('talk'); achEvent('talk');
+    achEvent('talk');
     reward(kind === 'answer' ? 5 : 2, kind === 'answer' ? '답변!' : '이야기 남김');
     loadChat(channel, elId);
   }
@@ -372,28 +363,49 @@
   const distinct = () => new Set(ach.v.map(x => x[0])).size;
   // 어떤 인증 시점을 끝으로 하는 window 시간 안에 서로 다른 변기 n곳을 인증했는가
   const burst = (n, win) => ach.v.some(([, t]) => new Set(ach.v.filter(([, u]) => u <= t && u > t - win).map(x => x[0])).size >= n);
-  const TITLES = [
-    { id: 'tut', name: '갓 눈뜬 자', desc: '튜토리얼을 끝까지 마친다', st: '🌱', ok: () => ach.tut },
-    { id: 'v1', name: '첫 발자국', desc: '처음으로 도착 인증을 한다', st: '👣', ok: () => ach.v.length >= 1 },
-    { id: 'd3', name: '골목의 순례자', desc: '서로 다른 변기 3곳 발견', st: '🚪', ok: () => distinct() >= 3 },
-    { id: 'd10', name: '열 개의 문을 연 자', desc: '서로 다른 변기 10곳 발견', st: '🗝️', ok: () => distinct() >= 10 },
-    { id: 'd30', name: '서른 문의 주인', desc: '서로 다른 변기 30곳 발견', st: '👑', ok: () => distinct() >= 30 },
-    { id: 'r1', name: '물을 읽는 자', desc: '처음으로 상태 보고를 한다', st: '💧', ok: () => ach.rep >= 1 },
-    { id: 'r10', name: '맑은 눈', desc: '상태 보고 10회', st: '👁️', ok: () => ach.rep >= 10 },
-    { id: 'r50', name: '천 갈래 물길을 보는 자', desc: '상태 보고 50회', st: '🔮', ok: () => ach.rep >= 50 },
-    { id: 't10', name: '메아리꾼', desc: '이야기를 10번 남긴다', st: '🔔', ok: () => ach.talk >= 10 },
-    { id: 'g1', name: '등불지기', desc: '지도에 없던 화장실을 등록한다', st: '🕯️', ok: () => ach.reg >= 1 },
-    { id: 'f1', name: '개척자', desc: '어느 변기의 1호 탐험가가 된다', st: '🚩', ok: () => ach.first >= 1 },
-    { id: 's3', name: '질풍수류', desc: '2시간 안에 서로 다른 변기 3곳 인증', st: '⚡', ok: () => burst(3, 2 * HOUR) },
-    { id: 's5', name: '하루 다섯 문', desc: '24시간 안에 서로 다른 변기 5곳 인증', st: '🌪️', ok: () => burst(5, 24 * HOUR) },
-    { id: 'n1', name: '심야의 방랑자', desc: '자정에서 새벽 5시 사이에 도착 인증', st: '🌙', ok: () => ach.v.some(([, t]) => new Date(t).getHours() < 5) },
-    { id: 'k3', name: '소용돌이를 건넌 자', desc: "경지 '소용돌이'에 이른다", st: '🌀', ok: () => Store.xp >= 1000 },
-  ];
+  // 달성 조건. 이름·설명·스티커·분류는 titles.js에 있다 (그 파일만 고치면 이름이 바뀐다)
+  const COND = {
+    tut: () => ach.tut, v1: () => ach.v.length >= 1,
+    d3: () => distinct() >= 3, d10: () => distinct() >= 10, d30: () => distinct() >= 30,
+    r1: () => ach.rep >= 1, r10: () => ach.rep >= 10, r50: () => ach.rep >= 50,
+    t10: () => ach.talk >= 10, g1: () => ach.reg >= 1, f1: () => ach.first >= 1,
+    s3: () => burst(3, 2 * HOUR), s5: () => burst(5, 24 * HOUR),
+    n1: () => ach.v.some(([, t]) => new Date(t).getHours() < 5),
+    k3: () => Store.xp >= 1000,
+  };
+  const TITLES = (window.GHC_TITLES || []).filter(t => COND[t.id]).map(t => Object.assign({}, t, { ok: COND[t.id] }));
+  const CATS = window.GHC_TITLE_CATS || [];
   const TITLE = Object.fromEntries(TITLES.map(t => [t.id, t]));
+  // 유물: 얻기 어려운 일부 칭호에만 딸려 온다. 여러 개를 함께 장착할 수 있고, 효과는 일부러 작게 잡았다
+  const RELIC_FX = {
+    d10: { fx: '도착 인증 가능 거리 +5m', e: { range: 5 } },
+    d30: { fx: '도착 인증 코인 +3', e: { ver: 3 } },
+    r50: { fx: '상태 보고 코인 +1', e: { rep: 1 } },
+    s3:  { fx: '출동 미션 보상 +5', e: { mission: 5 } },
+    s5:  { fx: '출동 미션 보상 +10', e: { mission: 10 } },
+    n1:  { fx: '자정~새벽 5시 도착 인증 코인 +5', e: { night: 5 } },
+    k3:  { fx: '일일 퀘스트 보상 +10', e: { daily: 10 } },
+  };
+  const RELICS = {}; for (const id in RELIC_FX) if (TITLE[id]) RELICS[id] = Object.assign({ ic: '🏺', name: '이름 없는 유물' }, (window.GHC_RELICS || {})[id], RELIC_FX[id]);
+  const ownedRelics = () => Object.keys(RELICS).filter(id => ach.got[id]);
+  const equippedRelics = () => (ach.relics || []).filter(id => RELICS[id] && ach.got[id]);
+  // 장착한 유물의 효과 합계
+  function rb(k) { return equippedRelics().reduce((n, id) => n + (RELICS[id].e[k] || 0), 0); }
+  function renderRelics() {
+    const own = ownedRelics(), eq = new Set(equippedRelics());
+    $('relicCount').textContent = own.length ? `장착 ${eq.size} / 보유 ${own.length}` : '';
+    $('relics').innerHTML = Object.keys(RELICS).map(id => { const r = RELICS[id], has = !!ach.got[id];
+      return `<button class="ttl ${has ? 'got' : 'locked'} ${eq.has(id) ? 'on' : ''}" data-r="${id}" ${has ? '' : 'disabled'}><span class="ttl-st">${has ? r.ic : '🔒'}</span><span class="ttl-tx"><b>${r.name}</b><small>${has ? r.fx : `칭호 「${TITLE[id].name}」을 얻으면 해금 · ${r.fx}`}</small></span>${eq.has(id) ? '<i>장착</i>' : ''}</button>`; }).join('');
+    $('relics').querySelectorAll('.ttl.got').forEach(b => b.onclick = () => {
+      const id = b.dataset.r, cur = new Set(equippedRelics()); cur.has(id) ? cur.delete(id) : cur.add(id);
+      ach.relics = [...cur]; achSave(); queueProfileSync(); renderRelics();
+      toast(cur.has(id) ? `${RELICS[id].ic} ${RELICS[id].name} 장착 · ${RELICS[id].fx}` : `${RELICS[id].name} 해제`);
+    });
+  }
   const STICKER_OK = new Set(TITLES.map(t => t.st));
   function achCheck() {
     let news = 0;
-    for (const t of TITLES) if (!ach.got[t.id] && t.ok()) { ach.got[t.id] = Date.now(); if (!ach.title) ach.title = t.id; news++; const d = 2600 + news * 2300; setTimeout(() => toast(`🏅 칭호 획득: ${t.name} · 스티커 ${t.st} 해금`, 3800), d); }
+    for (const t of TITLES) if (!ach.got[t.id] && t.ok()) { ach.got[t.id] = Date.now(); if (!ach.title) ach.title = t.id; news++; const d = 2600 + news * 2300; const rl = RELICS[t.id]; setTimeout(() => toast(`🏅 칭호 획득: ${t.name} · 스티커 ${t.st}${rl ? ' · 유물 ' + rl.name : ''} 해금`, 4200), d); }
     achSave(); if (news) queueProfileSync();
   }
   function achEvent(kind, id) {
@@ -403,8 +415,8 @@
   }
   // ---- 내 프로필 데이터 (서버에 올라가는 모양) ----
   function myProfile() {
-    const m = B.me(), st = myStyle();
-    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: $('rankLabel').textContent, power: Store.xp, style: st ? `${st[0]} ${st[1]}` : null, stickers: ach.stickers, found: distinct() };
+    const m = B.me();
+    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: $('rankLabel').textContent, power: Store.xp, relics: equippedRelics(), stickers: ach.stickers, found: distinct() };
   }
   let syncT = null;
   function queueProfileSync() { clearTimeout(syncT); syncT = setTimeout(() => B.saveProfile(myProfile()).catch(e => console.warn('profile sync', e)), 1500); }
@@ -415,14 +427,15 @@
     el.innerHTML = `<div class="b-main"><div class="me-avatar" ${mine ? 'id="meAvatar"' : ''}>${esc(p.avatar || '🚽')}</div><div>
         ${t ? `<div class="b-title">「${esc(t.name)}」</div>` : ''}
         <div class="me-name" ${mine ? 'id="meName"' : ''}>${esc(p.nick || '이름 없는 탐험가')}</div>
-        <div class="me-sub">${esc(p.rank || '잠든 물방울')} · 변기력 ${(+p.power || 0).toLocaleString()}${p.style ? ' · ' + esc(p.style) + ' 계통' : ''}</div></div></div>`
+        <div class="me-sub">${esc(p.rank || '잠든 물방울')} · 변기력 ${(+p.power || 0).toLocaleString()}</div></div></div>`
       + cleanStickers(stickers).map((s, i) => `<span class="stk" data-i="${i}" style="left:${s.x}%;top:${s.y}%;font-size:${Math.round(30 * s.z)}px">${s.s}</span>`).join('');
   }
-  function drawTitles(el, gotIds, equipped, mine) {
+  let titleCat = 'all';
+  function drawTitles(el, gotIds, equipped, mine, cat) {
     const got = new Set(gotIds);
-    const list = mine ? TITLES : TITLES.filter(t => got.has(t.id));
+    const list = (mine ? TITLES : TITLES.filter(t => got.has(t.id))).filter(t => !cat || cat === 'all' || t.cat === cat);
     el.innerHTML = list.length ? list.map(t => `<button class="ttl ${got.has(t.id) ? 'got' : 'locked'} ${equipped === t.id ? 'on' : ''}" data-t="${t.id}" ${mine && got.has(t.id) ? '' : 'disabled'}>
-        <span class="ttl-st">${got.has(t.id) ? t.st : '🔒'}</span><span class="ttl-tx"><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span>${equipped === t.id ? '<i>대표</i>' : ''}</button>`).join('') : '<div class="empty">아직 획득한 칭호가 없어요</div>';
+        <span class="ttl-st">${got.has(t.id) ? t.st : '🔒'}</span><span class="ttl-tx"><b>${esc(t.name)}</b><small>${esc(t.desc)}${RELICS[t.id] ? ' · 유물 ' + RELICS[t.id].ic : ''}</small></span>${equipped === t.id ? '<i>대표</i>' : ''}</button>`).join('') : '<div class="empty">아직 획득한 칭호가 없어요</div>';
   }
   // ---- 스티커 꾸미기 (붙이기 → 끌기 → 확인) ----
   let deco = null, decoSel = -1;
@@ -456,12 +469,14 @@
   async function openPeek(userId, fallbackNick) {
     if (userId === myId) return $('profBtn').onclick();
     closeSheets(); $('peek').classList.remove('hidden');
-    $('peekMeta').textContent = '불러오는 중…'; $('peekBoard').innerHTML = ''; $('peekTitles').innerHTML = '';
+    $('peekMeta').textContent = '불러오는 중…'; $('peekBoard').innerHTML = ''; $('peekTitles').innerHTML = ''; $('peekRelics').innerHTML = '';
     let p = null; try { p = await B.getProfile(userId); } catch (e) {}
     if (!p) { $('peekMeta').textContent = '아직 프로필 카드를 만들지 않은 탐험가예요'; drawBoard($('peekBoard'), { nick: fallbackNick, avatar: '🚽' }, [], false); $('peekTitles').innerHTML = '<div class="empty">공개된 칭호가 없어요</div>'; return; }
     $('peekMeta').textContent = `발견한 변기 ${+p.found || 0}곳 · 칭호 ${(p.titles || []).length}개`;
     drawBoard($('peekBoard'), p, p.stickers, false);
     drawTitles($('peekTitles'), p.titles || [], p.title, false);
+    const pr = (p.relics || []).filter(id => RELICS[id]);
+    $('peekRelics').innerHTML = pr.length ? pr.map(id => `<span>${RELICS[id].ic} ${RELICS[id].name}</span>`).join('') : '<span class="locked">장착한 유물 없음</span>';
   }
   $('peekClose').onclick = () => $('peek').classList.add('hidden');
   setTimeout(achCheck, 3500); // 이미 조건을 채운 칭호는 시작할 때 바로 지급
@@ -539,11 +554,12 @@
     const m = B.me();
     achCheck();
     if (!deco) drawBoard($('myBoard'), myProfile(), ach.stickers, true);
-    drawTitles($('titles'), Object.keys(ach.got), ach.title, true);
+    $('titleCats').innerHTML = [{ id: 'all', name: '전체' }].concat(CATS).map(c => { const all = TITLES.filter(t => c.id === 'all' || t.cat === c.id); if (!all.length) return ''; return `<button class="${titleCat === c.id ? 'on' : ''}" data-c="${c.id}">${esc(c.name)} <small>${all.filter(t => ach.got[t.id]).length}/${all.length}</small></button>`; }).join('');
+    $('titleCats').querySelectorAll('button').forEach(b => b.onclick = () => { titleCat = b.dataset.c; renderMe(); });
+    drawTitles($('titles'), Object.keys(ach.got), ach.title, true, titleCat);
     $('titleCount').textContent = `${Object.keys(ach.got).length} / ${TITLES.length}`;
     $('titles').querySelectorAll('.ttl.got').forEach(b => b.onclick = () => { ach.title = b.dataset.t; achSave(); queueProfileSync(); renderMe(); toast(`대표 칭호: 「${TITLE[b.dataset.t].name}」`); });
-    const st = myStyle();
-    $('meStyle').innerHTML = st ? `<b>${st[0]} ${st[1]} 계통</b><span>${st[2]}</span>` : `<b>❔ 계통 미발현</b><span>보고·인증·이야기·등록을 합쳐 5번 하면 당신의 계통이 드러납니다</span>`;
+    renderRelics();
     $('profRank').textContent = '채팅에서 닉네임을 누르면 서로의 프로필 카드를 볼 수 있어요';
     $('nickInput').value = m.nick;
     $('avatars').innerHTML = AVATARS.map(x => `<button class="${x === m.avatar ? 'on' : ''}" data-a="${x}">${x}</button>`).join('');

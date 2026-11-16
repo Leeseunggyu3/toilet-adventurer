@@ -90,7 +90,6 @@ try {
   check('화장실 등록이 서버로 전송됨', db.toilets.length === 1 && db.toilets[0].name === '점검용 등록');
 
   await page.click('#profBtn'); await page.waitForTimeout(600);
-  check('수첩: 5번 이상 활동하면 계통이 발현됨', (await page.innerText('#meStyle')).includes('계통') && !(await page.innerText('#meStyle')).includes('미발현'), await page.innerText('#meStyle'));
   check('경지 이름 표시', ['잠든 물방울', '첫 물결', '고요한 수면', '소용돌이'].includes(await page.innerText('#rankLabel')), await page.innerText('#rankLabel'));
   check('탐험가 수첩: 도감에 방문한 변기 표시', (await page.innerText('#dex')).includes('공원 화장실'));
   await page.fill('#nickInput', '점검탐험가'); await page.click('#nickSave'); await page.click('#avatars button[data-a="🦖"]'); await page.waitForTimeout(200);
@@ -122,14 +121,32 @@ try {
   check('스티커: 확대가 저장되고, 삭제한 스티커는 남지 않음', !!mineP && mineP.data.stickers.length === 1 && mineP.data.stickers[0].z > 1.3, mineP ? JSON.stringify(mineP.data.stickers) : '');
   check('프로필이 서버에 대표 칭호와 함께 저장', !!mineP && mineP.data.title === 'f1' && mineP.data.titles.length >= 5);
   await page.click('#profClose');
-  db.profiles.other1 = { data: { nick: '다른탐험가', avatar: '🦊', title: 'd10', titles: ['tut', 'd10'], rank: '소용돌이', power: 1200, style: '👣 발자국', stickers: [{ s: '🗝️', x: 80, y: 20 }], found: 12 } };
+  db.profiles.other1 = { data: { nick: '다른탐험가', avatar: '🦊', title: 'd10', titles: ['tut', 'd10'], rank: '소용돌이', power: 1200, relics: ['d10'], stickers: [{ s: '🗝️', x: 80, y: 20 }], found: 12 } };
   db.messages.push({ id: 'mx', channel: db.messages.at(-1).channel, user_id: 'other1', nick: '🦊 다른탐험가', text: '안녕하세요', kind: 'chat', helpful: 0, at: new Date().toISOString() });
   await page.click('#areaBtn'); await page.waitForTimeout(600);
   await page.click('#areaChat .nicklink[data-uid="other1"]'); await page.waitForTimeout(600);
   const peek = await page.innerText('#peekBoard');
   check('프로필 조회: 닉네임을 누르면 상대의 칭호와 경지가 보임', peek.includes('열 개의 문을 연 자') && peek.includes('다른탐험가') && peek.includes('소용돌이'), peek.replace(/\n/g, ' '));
+  check('프로필 조회: 상대가 장착한 유물 표시', (await page.innerText('#peekRelics')).includes('열쇠 꾸러미'));
   check('프로필 조회: 상대의 스티커와 획득 칭호 목록 표시', (await page.locator('#peekBoard .stk').count()) === 1 && (await page.locator('#peekTitles .ttl').count()) === 2);
   await page.click('#peekClose');
+
+  // ---- 유물: 어려운 칭호에만, 여러 개 장착, 작은 효과 ----
+  await page.click('#profBtn'); await page.waitForTimeout(300);
+  check('유물: 쉬운 칭호만으로는 유물이 없음(전부 잠김)', (await page.locator('#relics .ttl.got').count()) === 0 && (await page.locator('#relics .ttl.locked').count()) === 7);
+  await page.evaluate(() => { const a = JSON.parse(localStorage.getItem('ghc-ach')); for (let i = 0; i < 30; i++) a.v.push(['fake' + i, Date.now() - i * 9e6]); a.rep = 50; localStorage.setItem('ghc-ach', JSON.stringify(a)); });
+  await page.reload(); await page.waitForTimeout(1500); await page.click('#profBtn'); await page.waitForTimeout(500);
+  const ownR = await page.locator('#relics .ttl.got').count();
+  check('유물: 변기 10곳·30곳, 보고 50회 칭호를 얻으면 유물 해금', ownR >= 3, ownR + '개');
+  await page.click('#titleCats button[data-c="report"]'); await page.waitForTimeout(200);
+  check('칭호: 분류 버튼으로 걸러 보기(보고 3개)', (await page.locator('#titles .ttl').count()) === 3 && (await page.innerText('#titleCats')).includes('보고 3/3'), await page.innerText('#titleCats'));
+  await page.click('#titleCats button[data-c="all"]');
+  await page.click('#relics .ttl[data-r="d10"]'); await page.click('#relics .ttl[data-r="d30"]'); await page.waitForTimeout(200);
+  check('유물: 여러 개를 함께 장착', (await page.locator('#relics .ttl.on').count()) === 2 && (await page.innerText('#relicCount')).includes('장착 2'));
+  await page.click('#profClose'); await page.evaluate(() => document.querySelectorAll('.tmark')[2].click()); await page.waitForTimeout(500);
+  const vlabel = await page.innerText('#verifyBtn');
+  check('유물: 효과가 인증 버튼에 반영(55m, +33)', vlabel.includes('55m') && vlabel.includes('+33'), vlabel);
+  await page.click('#shClose');
 
   // ---- 게스트 → 구글 로그인 → 다른 기록 불러오기 ----
   await page.click('#profBtn'); await page.waitForTimeout(300);
