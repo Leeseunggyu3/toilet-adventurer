@@ -58,6 +58,10 @@ if (v6) {
   if (r.status === 200 && Array.isArray(r.j)) line('✅', '없음 신고 집계·사진 증거(v8) 설치됨', `신고가 걸린 변기 ${r.j.length}곳, 숨김 ${r.j.filter(x => x.hidden).length}곳`);
   else if (r.status === 404) line('⏳', '없음 신고 집계·사진 증거(v8) 아직 실행 전', 'schema_v8_evidence.sql을 실행하면 켜짐');
   else line('❌', '없음 신고 집계(v8) 오류', `[${r.status}] ${r.t.slice(0, 160)}`); }
+{ const r = await rpc('toilet_stats', { p_toilet: 'live-check-none' });
+  if (r.status === 200 && r.j && r.j.visits === 0) line('✅', '변기 기록 서버 집계(v8) 동작', '방문 기록 대신 숫자만 보냄');
+  else if (r.status === 404) line('⏳', '변기 기록 서버 집계(v8) 아직 실행 전', '최신 schema_v8_evidence.sql을 실행하면 켜짐 (그 전엔 예전 방식)');
+  else line('❌', '변기 기록 서버 집계 오류', `[${r.status}] ${String(r.t).slice(0, 160)}`); }
 
 // 4. 구글 로그인 설정
 { const r = await call('/auth/v1/settings');
