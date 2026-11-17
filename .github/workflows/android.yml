@@ -47,7 +47,8 @@ jobs:
         working-directory: app/android
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          # 공용 저장소(Maven Central)가 가끔 일시적으로 실패해서 한 번 더 시도한다
+          ./gradlew --no-daemon assembleDebug || { sleep 45; ./gradlew --no-daemon --refresh-dependencies assembleDebug; }
           cp app/build/outputs/apk/debug/app-debug.apk ../ToiletAdventure.apk
           ls -la ../ToiletAdventure.apk
       - name: Publish to the android-test release
