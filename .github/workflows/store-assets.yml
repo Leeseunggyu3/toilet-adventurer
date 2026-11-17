@@ -1,0 +1,45 @@
+# 플레이 스토어용 이미지(스크린샷·대표 이미지·아이콘)를 실제 지도와 함께 만들어 store-assets 브랜치에 올린다.
+# 화면이 바뀌었을 때 Actions 탭에서 수동으로 실행한다.
+name: store-assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Attach prebuilt toilet data
+        run: |
+          mkdir -p data
+          git archive origin/toilet-data | tar -x -C data
+          ls data | head
+      - name: Install Playwright and fonts
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk fonts-noto-color-emoji >/dev/null
+          npm init -y >/dev/null
+          npm install playwright@1 >/dev/null
+          npx playwright install --with-deps chromium
+      - name: Take screenshots
+        run: |
+          python3 -m http.server 8765 >/dev/null 2>&1 &
+          sleep 2
+          node tests/store_shots.mjs raw
+          node tools/store_compose.mjs raw final
+      - name: Push to the store-assets branch
+        run: |
+          mkdir -p /tmp/out && cp -r final raw /tmp/out/
+          cd /tmp/out
+          git init -q -b store-assets
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "스토어 이미지 ($(date -u +%F))"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" store-assets
