@@ -33,6 +33,7 @@
   <tr><td>Google account email</td><td>Only when you sign in with Google</td><td>Authentication service (Supabase)</td><td>No</td></tr>
   <tr><td>Photo evidence (photos of toilet entrances or signs)</td><td>When you upload a photo</td><td>Server. Before upload, your device shrinks the photo and removes its location data (EXIF)</td><td>Yes (with the uploader's nickname). Inappropriate photos are hidden after 2 reports. Only the latest 8 photos per toilet are kept; older ones are deleted automatically</td></tr>
   <tr><td>Coordinates of the toilet you checked in at</td><td>When you check in</td><td>Server</td><td>No (used to filter out impossible movements)</td></tr>
+  <tr><td>Advertising ID and other device information (Android app only)</td><td>When you tap the "📺 Watch an ad" button in the coin shop</td><td>Google AdMob (not stored on our server)</td><td>No</td></tr>
   <tr><td>Feedback text, app version, browser type</td><td>When you send feedback</td><td>Server</td><td>No (read only by the operator)</td></tr>
 </table>
 <div class="box">A check-in records the fact that you were near that toilet. Your exact GPS position and your route are not sent to the server; the toilet's own coordinates are. Please note, however, that a history of check-ins can reveal where and when you have been.</div>
@@ -49,7 +50,8 @@
 <ul>
   <li>Information stored on your device is deleted when you clear the site's data in your browser.</li>
   <li>Information stored on the server is kept while the Service is operated.</li>
-  <li>To have your posts, records, profile or account deleted, send a request with your nickname through <b>❓ Help → Send feedback</b> in the app. We will delete them after confirming. Deletion is currently handled manually by the operator, so it may take some time.</li>
+  <li id="delete"><b>Delete it yourself:</b> In the app (web or Android), open <b>🧭 Explorer's Notebook → "Delete account &amp; data"</b> at the bottom and tap it twice. Your posts, status reports, check-ins, added toilets, photos, coin and purchase records and profile are deleted from the server right away. If you signed in with Google, your sign-in account and account storage are deleted too. Records on your device are cleared as well.</li>
+  <li><b>If you already removed the app or can't use the button:</b> request deletion with your nickname through <b>❓ Help → Send feedback</b> on the website (<a href="./">leeseunggyu3.github.io/toilet-adventurer</a>). We will delete it within 30 days after confirming.</li>
 </ul>
 
 <h2>4. Third-party services</h2>
@@ -57,15 +59,16 @@
 <table>
   <tr><th>Provider</th><th>Purpose</th></tr>
   <tr><td>Supabase</td><td>Database and Google sign-in authentication</td></tr>
-  <tr><td>GitHub Pages</td><td>Hosting the app (web pages)</td></tr>
+  <tr><td>GitHub Pages</td><td>Hosting the app (web pages). The Android app also downloads toilet data from here</td></tr>
   <tr><td>OpenStreetMap, Overpass API</td><td>Map images and toilet locations. For Korea and Japan, pre-downloaded data is used; elsewhere, the map area you are viewing is sent to Overpass</td></tr>
   <tr><td>Google</td><td>Google sign-in (only if you choose to sign in)</td></tr>
+  <tr><td>Google AdMob</td><td>Rewarded ads in the Android app. An ad plays only when you tap the "📺 Watch an ad" button in the coin shop. To show and measure ads, your advertising ID, device information, IP address and similar data are sent to Google. In regions that require consent, such as Europe, we ask for consent first</td></tr>
   <tr><td>Kakao Map, Naver Map, Google Maps</td><td>When you tap a directions button, you are taken to that service with the destination</td></tr>
 </table>
-<p>The Service does not sell personal information. If we introduce advertising in the future, we will add the ad providers and the information they collect to this page first.</p>
+<p>The Service does not sell personal information. Our only ad provider is Google AdMob, and ad data is handled under <a href="https://policies.google.com/technologies/ads">Google's advertising policies</a> and <a href="https://policies.google.com/privacy">privacy policy</a>. You can reset or delete your advertising ID in your phone settings. The website currently shows no ads.</p>
 
 <h2>5. Your rights</h2>
-<p>You can request access to, correction of, or deletion of your information. You can change your nickname and profile yourself in the app's 🧭 Explorer's Notebook. You can turn off location access in your browser settings at any time; the map still works without it.</p>
+<p>You can request access to, correction of, or deletion of your information, and you can also delete it yourself in the app (see section 3). You can change your nickname and profile yourself in the app's 🧭 Explorer's Notebook. You can turn off location access in your browser settings or your phone's app settings at any time; the map still works without it.</p>
 
 <h2>6. Children</h2>
 <p>The Service is not directed at children under 14, and we do not knowingly collect personal information from children under 14.</p>
@@ -76,6 +79,7 @@
   <li>Encryption in transit (HTTPS)</li>
   <li>Account storage can be read and written only by its owner</li>
   <li>Profiles can be changed only with your device's secret key</li>
+  <li>Ad rewards are granted only after the server checks the daily limit</li>
 </ul>
 
 <h2>8. Contact and changes</h2>
