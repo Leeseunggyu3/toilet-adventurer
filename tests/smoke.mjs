@@ -13,7 +13,11 @@ const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ' — ' + detail : ''}`); };
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, args: ['--no-sandbox'] });
-const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 800 }, geolocation: { latitude: 37.5665, longitude: 126.978 }, permissions: ['geolocation'] });
+// 시간대에 따라 결과가 달라지는 칭호(심야 인증)가 있으므로, 지금 낮(9~17시)인 시간대를 골라 브라우저를 그 시간대로 띄운다
+const DAY_TZ = ['Asia/Seoul', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Kolkata', 'Pacific/Auckland', 'Europe/Moscow', 'America/Sao_Paulo']
+  .find(tz => { const h = +new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hourCycle: 'h23' }).format(new Date()); return h >= 9 && h <= 17; }) || 'Asia/Seoul';
+console.log('시험용 시간대:', DAY_TZ);
+const ctx = await browser.newContext({ timezoneId: DAY_TZ, locale: 'ko-KR', serviceWorkers: 'block', viewport: { width: 390, height: 800 }, geolocation: { latitude: 37.5665, longitude: 126.978 }, permissions: ['geolocation'] });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', e => errors.push(String(e)));
