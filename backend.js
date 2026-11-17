@@ -73,6 +73,8 @@
     setNick(n) { try { localStorage.setItem('ghc-nick', n); } catch (e) {} }
     setAvatar(a) { try { localStorage.setItem('ghc-avatar', a); } catch (e) {} }
     async listMessages(channel) { return (await this._get(`messages?channel=eq.${encodeURIComponent(channel)}&order=at.desc&limit=80`)).reverse(); }
+    // since 이후에 올라온 글만 (열어둔 채팅을 몇 초마다 다시 볼 때 전송량을 줄인다)
+    async listMessagesSince(channel, since) { return this._get(`messages?channel=eq.${encodeURIComponent(channel)}&at=gte.${encodeURIComponent(since)}&order=at.asc&limit=80`); }
     // ---- 본인 확인이 붙은 쓰기 (schema_v7). 서버에 v7이 없으면(404) 예전 방식으로 직접 쓴다 ----
     async _signed(name, body, legacy) {
       if (this.signed !== false) {

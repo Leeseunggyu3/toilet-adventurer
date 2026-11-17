@@ -92,6 +92,8 @@ await page.route('**/sb/rest/v1/**', r => {
   const tid = u.searchParams.get('toilet_id');
   if (tid && tid.startsWith('in.')) { const ids = tid.slice(4, -1).split(',').map(x => x.replace(/^"|"$/g, '')); db.inQueries = (db.inQueries || 0) + 1; rows = rows.filter(x => ids.includes(x.toilet_id)); }
   else if (tid) rows = rows.filter(x => 'eq.' + x.toilet_id === tid);
+  const atq = (u.searchParams.getAll('at') || []).find(x => x.startsWith('gte.') && table === 'messages');
+  if (atq) { db.sinceQueries = (db.sinceQueries || 0) + 1; const t0 = new Date(atq.slice(4)).getTime(); rows = rows.filter(x => new Date(x.at).getTime() >= t0); }
   const k = u.searchParams.get('k'); if (k === 'eq.flagged') rows = rows.filter(x => x.k === 'flagged'); else if (k === 'neq.flagged') rows = rows.filter(x => x.k !== 'flagged');
   r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
 });
@@ -138,6 +140,11 @@ try {
 
   await page.click('#areaBtn'); await page.waitForTimeout(300); await page.click('#area .chips button >> nth=0'); await page.waitForTimeout(600);
   check('동네 광장: 질문 칩 전송', (await page.locator('#areaChat .msg.question').count()) === 1);
+  { const ch = db.messages[db.messages.length - 1].channel, sq = db.sinceQueries || 0;
+    db.messages.push({ id: 'live1', at: new Date(Date.now() + 1000).toISOString(), helpful: 0, channel: ch, user_id: 'other9', nick: '🦆 지나가던 탐험가', text: '새로 올라온 글', kind: 'chat' });
+    await page.waitForTimeout(6800);
+    check('동네 광장: 열어두면 새 글만 받아서 이어 붙임', (db.sinceQueries || 0) > sq && (await page.innerText('#areaChat')).includes('새로 올라온 글'));
+    db.messages = db.messages.filter(m => m.id !== 'live1'); }
   await page.click('#areaClose');
 
   await page.click('#addBtn'); await page.fill('#addName', '점검용 등록'); await page.click('#addOk'); await page.waitForTimeout(500);

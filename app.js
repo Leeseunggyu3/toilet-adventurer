@@ -488,9 +488,18 @@
   // ---- 채팅 공통 ----
   let replyTo = null, chatTimer = null;
   const myId = B.me().id;
+  const chatCache = new Map();
   async function loadChat(channel, elId, force) {
     const el = $(elId); let rows = [];
-    try { rows = await B.listMessages(channel); } catch (e) { el.innerHTML = '<div class="empty">채팅을 불러오지 못했어요</div>'; return; }
+    // 1분에 한 번만 전체(최근 80개)를 받고, 그 사이에는 새 글만 받는다. 전체를 받을 때 "도움됐어요" 수도 새로 반영된다
+    const cc = chatCache.get(channel);
+    try {
+      if (cc && cc.rows.length && !force && B.listMessagesSince && Date.now() - cc.full < 60000) {
+        const have = new Set(cc.rows.map(r => r.id));
+        rows = cc.rows.concat((await B.listMessagesSince(channel, cc.rows[cc.rows.length - 1].at)).filter(r => !have.has(r.id))).slice(-80);
+        chatCache.set(channel, { rows, full: cc.full });
+      } else { rows = await B.listMessages(channel); chatCache.set(channel, { rows, full: Date.now() }); }
+    } catch (e) { if (!cc) el.innerHTML = '<div class="empty">채팅을 불러오지 못했어요</div>'; return; }
     const sig = channel + '|' + rows.length + '|' + (rows.length ? rows[rows.length - 1].id : '') + '|' + rows.reduce((n, r) => n + (r.helpful || 0), 0);
     if (!force && el.dataset.sig === sig) return;
     const atBottom = el.dataset.sig === undefined || !el.dataset.sig.startsWith(channel + '|') || el.scrollHeight - el.scrollTop - el.clientHeight < 60;
@@ -543,7 +552,7 @@
     closeSheets(); $('area').classList.remove('hidden');
     $('areaMeta').textContent = me ? '내 위치 기준 약 2km 격자 안의 탐험가들' : '위치를 켜면 우리 동네 채널로 연결돼요';
     loadChat(areaChannel(), 'areaChat');
-    clearInterval(chatTimer); chatTimer = setInterval(() => { if (!$('area').classList.contains('hidden')) loadChat(areaChannel(), 'areaChat'); else clearInterval(chatTimer); }, 6000);
+    clearInterval(chatTimer); chatTimer = setInterval(() => { if ($('area').classList.contains('hidden')) clearInterval(chatTimer); else if (!document.hidden) loadChat(areaChannel(), 'areaChat'); }, 6000);
   };
   $('areaClose').onclick = () => { $('area').classList.add('hidden'); clearInterval(chatTimer); };
   function closeSheets() { if (deco) endDeco(); ['sheet', 'sos', 'area', 'profile', 'help', 'peek', 'shop', 'photoView'].forEach(id => $(id).classList.add('hidden')); }
