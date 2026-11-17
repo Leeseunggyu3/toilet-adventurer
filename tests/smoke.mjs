@@ -52,6 +52,11 @@ await page.route('**/sb/rest/v1/**', r => {
     if (db.signed && ['messages', 'reports', 'visits', 'toilets'].includes(table)) { db.directWrites++; return r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: '42501', message: 'permission denied' }) }); }
     // 없음 신고 집계·사진(v8) 대역
     if (table === 'rpc/toilet_flags') { if (!db.v8) return r.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"PGRST202"}' }); const ids = (JSON.parse(q.postData() || '{}').p_ids) || null; db.flagIds = ids; return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(db.flagsV8.filter(f => !ids || ids.includes(f.toilet_id))) }); }
+    if (table === 'rpc/delete_my_data') {
+      const b = JSON.parse(q.postData()); db.deleted = (db.deleted || []).concat(b.p_user);
+      for (const k of ['messages', 'visits', 'reports', 'toilets', 'photos']) db[k] = db[k].filter(x => x.user_id !== b.p_user);
+      return r.fulfill({ status: 200, contentType: 'application/json', body: '{"messages":0}' });
+    }
     if (table === 'rpc/toilet_stats') {
       if (!db.v8) return r.fulfill({ status: 404, contentType: 'application/json', body: '{"code":"PGRST202"}' });
       const b = JSON.parse(q.postData()), v = db.visits.filter(x => x.toilet_id === b.p_toilet); db.statsRpc = (db.statsRpc || 0) + 1;
@@ -420,6 +425,18 @@ try {
   const st = await page.evaluate(() => ({ v0: JSON.parse(localStorage.getItem('ghc-v0')), rep: JSON.parse(localStorage.getItem('ghc-rep') || '{}') }));
   check('저장 공간: 보고는 별도 칸으로 옮겨지고 계정 백업 칸(ghc-v0)에서는 빠짐', !('reports' in st.v0) && !!st.rep.newT, JSON.stringify(st).slice(0, 200));
   check('저장 공간: 이틀 지난 보고와 지난 날짜의 인증 기록은 지움', !st.rep.oldT && !st.v0.verified.a);
+
+  // 계정·데이터 삭제: 한 번 누르면 확인, 두 번째에 서버 삭제 → 기기 기록도 지우고 새 탐험가로
+  const oldUid = await page.evaluate(() => localStorage.getItem('ghc-uid'));
+  await page.evaluate(() => document.querySelectorAll('.sheet:not(.hidden), .modal:not(.hidden)').forEach(m => m.classList.add('hidden')));
+  await page.click('#profBtn'); await page.waitForTimeout(400);
+  await page.click('#delMe'); await page.waitForTimeout(200);
+  check('삭제: 첫 번째 누름은 확인만 (아직 안 지움)', !(db.deleted || []).length && (await page.innerText('#delMe')).includes('한 번 더'));
+  await Promise.all([page.waitForEvent('load', { timeout: 8000 }).catch(async e => { console.log('  (삭제 뒤 알림:', await page.innerText('#toast').catch(() => '?'), ')'); throw e; }), page.click('#delMe')]);
+  await page.waitForTimeout(1200);
+  const newUid = await page.evaluate(() => localStorage.getItem('ghc-uid'));
+  check('삭제: 서버에서 내 데이터 삭제를 요청', (db.deleted || []).includes(oldUid));
+  check('삭제: 기기 기록도 지우고 새 탐험가로 시작', !!newUid && newUid !== oldUid && !db.messages.some(m => m.user_id === oldUid));
 } catch (e) {
   check('점검 스크립트가 끝까지 실행됨', false, String(e).slice(0, 300));
 }

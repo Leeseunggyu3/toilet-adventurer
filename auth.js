@@ -76,6 +76,12 @@ window.Auth = (() => {
       const P = NATIVE && window.Capacitor.Plugins;
       if (P && P.Browser) P.Browser.open({ url }).catch(() => { location.href = url; }); else location.href = url;
     },
+    async deleteAccount() {
+      if (!sess) return;
+      const r = await fetch(`${URL0}/rest/v1/rpc/delete_my_account`, { method: 'POST', headers: await hdr(), body: '{}' });
+      if (!r.ok) throw new Error(`[${r.status}] ${(await r.text()).slice(0, 160)}`);
+      sess = null; keep();
+    },
     async signOut() { try { const h = await hdr(); await fetch(`${URL0}/auth/v1/logout`, { method: 'POST', headers: h }); } catch (e) {} sess = null; keep(); },
     async fetchUser() { const r = await fetch(`${URL0}/auth/v1/user`, { headers: await hdr() }); if (!r.ok) throw new Error(`[${r.status}] 사용자 정보를 가져오지 못했어요`); const j = await r.json(); sess.email = j.email || '구글 계정'; keep(); return sess.email; },
     async loadAccount() { const r = await fetch(`${URL0}/rest/v1/accounts?select=state,updated_at`, { headers: await hdr() }); if (!r.ok) throw new Error(`[${r.status}] ${(await r.text()).slice(0, 160)}`); const rows = await r.json(); return rows[0] || null; },

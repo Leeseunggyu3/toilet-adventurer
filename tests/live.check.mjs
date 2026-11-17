@@ -67,6 +67,10 @@ if (v6) {
   if (r.status === 200 && r.j && typeof r.j.ads_today === 'number' && c.status !== 404) line('✅', '앱 광고 보너스(v9) 준비됨', '하루 3번, 끝까지 본 광고만');
   else if (c.status === 404 || (r.j && r.j.ads_today === undefined)) line('⏳', '앱 광고 보너스(v9) 아직 실행 전', 'schema_v9_ads.sql을 실행하면 앱 상점에 광고 버튼이 나옴');
   else line('❌', '앱 광고 보너스 확인 오류', `[${c.status}] ${String(c.t).slice(0, 160)}`); }
+{ const c = await rpc('delete_my_data', { p_user: 'live-check-nobody', p_secret: 'x' });  // 열쇠가 짧아 거절되어야 정상 (함수가 있다는 뜻)
+  if (c.status === 404) line('⏳', '계정·데이터 삭제(v10) 아직 실행 전', 'schema_v10_delete.sql을 실행해야 앱의 삭제 버튼이 동작함 (플레이 스토어 필수)');
+  else if (c.status >= 400 && /bad request|본인 확인/.test(String(c.t))) line('✅', '계정·데이터 삭제(v10) 준비됨', '본인 열쇠가 있어야만 지움');
+  else line('❌', '계정·데이터 삭제 확인 오류', `[${c.status}] ${String(c.t).slice(0, 160)}`); }
 
 // 4. 구글 로그인 설정
 { const r = await call('/auth/v1/settings');

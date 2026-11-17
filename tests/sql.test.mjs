@@ -16,7 +16,7 @@ await db.exec(`
   create schema auth; create table auth.users (id uuid primary key);
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
 `);
-for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql', 'schema_v8_evidence.sql', 'schema_v9_ads.sql']) {
+for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql', 'schema_v8_evidence.sql', 'schema_v9_ads.sql', 'schema_v10_delete.sql']) {
   const sql = readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
   try { await db.exec(sql); check(`${f} 실행`, true); } catch (e) { check(`${f} 실행`, false, e.message); }
 }
@@ -257,6 +257,33 @@ await db.exec(readFileSync(new URL('../supabase/schema_v9_ads.sql', import.meta.
   check('광고 보너스: 광고를 먼저 봐도 오늘의 보너스는 그대로 받을 수 있음', w.bonus_today === false && w.ads_today === 1);
   check('광고 보너스: 변기력(XP)에는 안 들어감', w.xp === 0);
   try { await db.exec(readFileSync(new URL('../supabase/schema_v9_ads.sql', import.meta.url), 'utf8')); check('v9을 두 번 실행해도 안전', true); } catch (e) { check('v9을 두 번 실행해도 안전', false, e.message); }
+}
+
+// v10: 내 데이터 삭제
+{
+  const D = 'del_user', DK = 'del-secret-del-secret-del', O = 'other_keep', OK = 'oth-secret-oth-secret-oth';
+  for (const [u, k] of [[D, DK], [O, OK]]) {
+    await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [u, k, 'delT', 'n', 'n', 540, 35.0, 139.0]);
+    await db.query('select post_message($1,$2,$3,$4,$5)', [u, k, 'ch-del', 'hello there', 'chat']);
+    await db.query('select claim_bonus($1,$2)', [u, k]);
+  }
+  check('삭제: 남의 열쇠로는 못 지움', ((await fails('select delete_my_data($1,$2)', [D, OK])) || '').includes('본인 확인'));
+  const r = (await q('select delete_my_data($1,$2) r', [D, DK]))[0].r;
+  const left = async u => (await q(`select (select count(*) from messages where user_id=$1) + (select count(*) from visits where user_id=$1) + (select count(*) from claims where user_id=$1) + (select count(*) from profiles where user_id=$1) n`, [u]))[0].n;
+  check('삭제: 내 글·방문·보상·프로필이 모두 지워짐', +(await left(D)) === 0 && r.visits >= 1 && r.messages >= 1, JSON.stringify(r));
+  check('삭제: 다른 사람 데이터는 그대로', +(await left(O)) >= 4);
+  // 구글 계정 삭제: 로그인한 본인만
+  check('계정 삭제: 로그인 안 하면 거절', ((await fails('select delete_my_account()')) || '').includes('로그인'));
+  const UID = '11111111-1111-1111-1111-111111111111', UID2 = '22222222-2222-2222-2222-222222222222';
+  await db.exec(`insert into auth.users values ('${UID}'), ('${UID2}');
+    insert into accounts (auth_uid, state) values ('${UID}', '{}'), ('${UID2}', '{}');
+    create or replace function auth.uid() returns uuid language sql as $$ select '${UID}'::uuid $$;`);
+  await q('select delete_my_account()');
+  const au = await q('select id::text from auth.users order by id'), ac = await q('select auth_uid::text from accounts');
+  check('계정 삭제: 내 로그인 계정과 계정 저장소만 지워짐', au.length === 1 && au[0].id === UID2 && ac.length === 1 && ac[0].auth_uid === UID2);
+  await db.exec(`create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`);
+  check('계정 삭제: 익명 역할은 실행 권한 없음', !(await q(`select has_function_privilege('anon', 'public.delete_my_account()', 'execute') p`))[0].p);
+  try { await db.exec(readFileSync(new URL('../supabase/schema_v10_delete.sql', import.meta.url), 'utf8')); check('v10을 두 번 실행해도 안전', true); } catch (e) { check('v10을 두 번 실행해도 안전', false, e.message); }
 }
 
 const bad = results.filter(x => !x).length;

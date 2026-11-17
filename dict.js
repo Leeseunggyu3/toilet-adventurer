@@ -621,6 +621,30 @@ window.GHC_DICT = {
 "Today's ad bonuses done · Come back tomorrow",
 "今日の広告ボーナスは終了 · また明日"
 ],
+"🗑 계정·데이터 삭제": [
+"🗑 Delete account & data",
+"🗑 アカウント・データを削除"
+],
+"⚠️ 정말 지울까요? 되돌릴 수 없어요 · 한 번 더 누르면 삭제": [
+"⚠️ Really delete? This can't be undone · Tap again to delete",
+"⚠️ 本当に削除しますか？元に戻せません · もう一度押すと削除"
+],
+"삭제 중…": [
+"Deleting…",
+"削除中…"
+],
+"모든 기록을 지웠어요. 새 탐험가로 다시 시작합니다": [
+"All your records were deleted. Starting over as a new explorer",
+"すべての記録を削除しました。新しい探検家として始めます"
+],
+"삭제 실패: {0}": [
+"Delete failed: {0}",
+"削除失敗: {0}"
+],
+"서버 준비 중이에요. 잠시 후 다시 해주세요": [
+"The server is getting ready. Please try again shortly",
+"サーバーを準備中です。少ししてからもう一度お試しください"
+],
 "📺 광고 보너스 +{0}💰": [
 "📺 Ad bonus +{0}💰",
 "📺 広告ボーナス +{0}💰"

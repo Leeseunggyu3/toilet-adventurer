@@ -54,6 +54,7 @@
     async reportPhoto() { return false; }
     async addToilet() {} async toiletsIn() { return []; }
     async saveProfile(data) { (this.db.profiles || (this.db.profiles = {}))[uid] = data; this._save(); }
+    async deleteMyData() { try { localStorage.removeItem('ghc-local-db'); } catch (e) {} return {}; }
     async getProfile(id) { return (this.db.profiles || {})[id] || null; }
     async postFeedback(text, version) { (this.db.feedback || (this.db.feedback = [])).push({ text, version, at: new Date().toISOString() }); this._save(); }
   }
@@ -164,6 +165,13 @@
       const rows = await this._get(`reports?toilet_id=${inList(ids)}&k=eq.flagged&select=toilet_id,user_id&limit=2000`);
       const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);
       const out = {}; for (const id in m) out[id] = m[id].size; return out;
+    }
+    // v10: 이 탐험가의 서버 데이터를 모두 지운다 (글·방문·보고·사진·보상·프로필)
+    async deleteMyData() {
+      const r = await fetch(`${this.url}/rest/v1/rpc/delete_my_data`, { method: 'POST', headers: this.h, body: JSON.stringify({ p_user: uid, p_secret: secret }) });
+      if (r.status === 404) throw new Error('서버 준비 중이에요. 잠시 후 다시 해주세요');
+      if (!r.ok) throw new Error(`[${r.status}] ${(await r.text()).slice(0, 160)}`);
+      return r.json();
     }
     async saveProfile(data) {
       const r = await fetch(`${this.url}/rest/v1/rpc/save_profile`, { method: 'POST', headers: this.h, body: JSON.stringify({ p_user: uid, p_secret: secret, p_data: data }) });

@@ -51,6 +51,24 @@ jobs:
           ./gradlew --no-daemon assembleDebug || { sleep 45; ./gradlew --no-daemon --refresh-dependencies assembleDebug; }
           cp app/build/outputs/apk/debug/app-debug.apk ../ToiletAdventure.apk
           ls -la ../ToiletAdventure.apk
+      # 플레이 스토어용 파일(AAB). 저장소 설정의 비밀값 UPLOAD_KEYSTORE_B64 / UPLOAD_KEYSTORE_PASS가 있어야 만든다
+      - name: Build Play Store bundle (AAB)
+        working-directory: app/android
+        env:
+          KS_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.UPLOAD_KEYSTORE_PASS }}
+          KEY_ALIAS: upload
+          APP_VERSION_CODE: ${{ github.run_number }}
+          APP_VERSION_NAME: 1.0.${{ github.run_number }}
+        run: |
+          if [ -z "$KS_B64" ]; then echo "::notice::업로드 열쇠 비밀값이 없어 AAB는 건너뜀"; exit 0; fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          (cd .. && node scripts/patch-android.mjs)
+          ./gradlew --no-daemon bundleRelease || { sleep 45; ./gradlew --no-daemon --refresh-dependencies bundleRelease; }
+          cp app/build/outputs/bundle/release/app-release.aab ../ToiletAdventure-play.aab
+          rm -f "$RUNNER_TEMP/upload.jks"
+          ls -la ../ToiletAdventure-play.aab
       - name: Publish to the android-test release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -59,12 +77,16 @@ jobs:
           NOTES="시험용 안드로이드 앱 ${V}. 폰에서 ToiletAdventure.apk를 받아 설치하세요. 새 버전은 지우지 않고 덮어 설치하면 됩니다."
           if gh release view android-test >/dev/null 2>&1; then
             gh release upload android-test ToiletAdventure.apk --clobber
+            if [ -f ToiletAdventure-play.aab ]; then gh release upload android-test ToiletAdventure-play.aab --clobber; fi
             gh release edit android-test --title "안드로이드 시험판 ${V}" --notes "$NOTES" --prerelease
           else
-            gh release create android-test ToiletAdventure.apk --title "안드로이드 시험판 ${V}" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create android-test ToiletAdventure.apk $( [ -f ToiletAdventure-play.aab ] && echo ToiletAdventure-play.aab ) --title "안드로이드 시험판 ${V}" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: ToiletAdventure-apk
-          path: app/ToiletAdventure.apk
+          path: |
+            app/ToiletAdventure.apk
+            app/ToiletAdventure-play.aab
+          if-no-files-found: ignore
           retention-days: 14

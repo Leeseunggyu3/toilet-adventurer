@@ -773,7 +773,7 @@
   let profSent = null;
   function queueProfileSync() {
     clearTimeout(syncT);
-    syncT = setTimeout(() => { const p = myProfile(), sig = JSON.stringify(p); if (sig === profSent) return; B.saveProfile(p).then(() => { profSent = sig; }).catch(e => console.warn('profile sync', e)); }, 1500);
+    syncT = setTimeout(() => { if (window.__ghcDeleting) return; const p = myProfile(), sig = JSON.stringify(p); if (sig === profSent) return; B.saveProfile(p).then(() => { profSent = sig; }).catch(e => console.warn('profile sync', e)); }, 1500);
   }
   // ---- 프로필 카드 그리기 ----
   function cleanStickers(list) { return (Array.isArray(list) ? list : []).filter(s => s && STICKER_OK.has(s.s) && isFinite(s.x) && isFinite(s.y)).slice(0, 10).map(s => ({ s: s.s, x: Math.max(4, Math.min(96, +s.x)), y: Math.max(8, Math.min(92, +s.y)), z: Math.max(0.5, Math.min(2.5, +s.z || 1)) })); }
@@ -855,6 +855,28 @@
       $('acctIn').onclick = () => A.signIn();
     }
   }
+  // 계정·데이터 삭제 (플레이 스토어 정책). 한 번 누르면 확인 상태, 5초 안에 한 번 더 누르면 삭제
+  let delArmed = null, deleting = false;
+  $('delMe').onclick = async () => {
+    if (deleting) return;
+    if (!delArmed) {
+      $('delMe').classList.add('armed'); $('delMe').textContent = '⚠️ 정말 지울까요? 되돌릴 수 없어요 · 한 번 더 누르면 삭제';
+      delArmed = setTimeout(() => { delArmed = null; $('delMe').classList.remove('armed'); $('delMe').textContent = '🗑 계정·데이터 삭제'; }, 5000);
+      return;
+    }
+    clearTimeout(delArmed); delArmed = null; deleting = true; acctHold = true; window.__ghcDeleting = true; clearTimeout(syncT);
+    $('delMe').textContent = '삭제 중…';
+    try {
+      await B.deleteMyData();
+      if (A.enabled && A.signedIn) await A.deleteAccount();
+      try { Object.keys(localStorage).filter(k => k.startsWith('ghc')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+      toast('모든 기록을 지웠어요. 새 탐험가로 다시 시작합니다', 3000);
+      setTimeout(() => location.reload(), 1200);
+    } catch (e) {
+      deleting = false; acctHold = false; window.__ghcDeleting = false; $('delMe').classList.remove('armed'); $('delMe').textContent = '🗑 계정·데이터 삭제';
+      toast('삭제 실패: ' + String(e.message || e).slice(0, 120), 6000);
+    }
+  };
   async function saveAcct(manual) {
     if (!A.enabled || !A.signedIn || acctBusy || acctHold) return;
     const st = A.localState(), sig = JSON.stringify(st);
