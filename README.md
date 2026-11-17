@@ -21,7 +21,7 @@
 | `backend.js`, `store.js`, `auth.js` | 서버 통신, 기기 저장, 구글 로그인과 계정 저장 |
 | `ads.js` | 배너 광고 자리 (기본 꺼짐) |
 | `privacy.html` | 개인정보처리방침 |
-| `tools/build-toilet-data.mjs` | 화장실 데이터 미리 받기. 매주 GitHub Actions가 실행해 `toilet-data` 브랜치에 올리고, 배포 때 `data/`로 붙인다 |
+| `tools/build_toilet_data.py` | 화장실 데이터 미리 받기. 매주 Geofabrik의 한국·일본 OSM 파일에서 화장실만 골라 `toilet-data` 브랜치에 올리고, 배포 때 `data/`로 붙인다 |
 | `supabase/*.sql` | 서버 테이블과 보상 규칙 (v1~v8 순서대로 실행). 코인·변기력·칭호·구매는 v6의 `wallet_state`가 계산하고, v7부터 모든 쓰기는 본인 확인 함수(`post_*`)를 거침. v8은 없음 신고 집계(`toilet_flags`)와 사진 증거 |
 | `tests/smoke.mjs` | 화면 자동 점검 (가짜 서버). 실패하면 배포되지 않음 |
 | `tests/sql.test.mjs` | 서버 SQL 점검 (진짜 Postgres에 스키마를 올려 보상 규칙 확인) |

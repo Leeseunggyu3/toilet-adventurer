@@ -328,7 +328,7 @@ try {
   check('미리 받은 데이터: 이름이 없으면 "공중화장실"', await (async () => { await page.click('#shClose'); return openByName('공중화장실'); })());
   await page.click('#shClose');
   await ctx.setGeolocation({ latitude: 37.6, longitude: 127.2 }); await page.click('#locBtn'); await page.waitForTimeout(2500);
-  check('미리 받은 데이터: 받기에 실패한 지역(missing)에서는 Overpass로 직접', db.overpassCalls > 0, db.overpassCalls + '번 호출');
+  check('미리 받은 데이터: 데이터가 없는 칸에서는 Overpass로 직접', db.overpassCalls > 0, db.overpassCalls + '번 호출');
   await page.unroute('**/data/index.json'); await page.unroute('**/data/t/75_253.json*');
 
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);

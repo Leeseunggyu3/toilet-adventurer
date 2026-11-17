@@ -95,6 +95,8 @@
   async function fromPrebuilt(lat, lng, s, w, n, e) {
     const ix = await getIndex();
     if (!ix || !covered(ix, lat, lng)) return null;
+    // 이 지점의 타일에 데이터가 없으면(바다, 다른 나라 땅, 데이터가 빈 곳) 미리 받은 데이터를 믿지 않고 Overpass로
+    if (!ix.tiles[`${Math.floor(lat * 2)}_${Math.floor(lng * 2)}`]) return null;
     const keys = new Set();
     for (const a1 of [s, n]) for (const b1 of [w, e]) keys.add(`${Math.floor(a1 * 2)}_${Math.floor(b1 * 2)}`);
     try {

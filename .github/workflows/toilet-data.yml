@@ -1,5 +1,6 @@
 name: Refresh toilet data
-# 일주일에 한 번 OpenStreetMap에서 한국·일본 화장실을 받아 toilet-data 브랜치에 올리고, 사이트를 다시 배포한다.
+# 일주일에 한 번 Geofabrik의 한국·일본 OpenStreetMap 파일에서 화장실만 골라 toilet-data 브랜치에 올리고, 사이트를 다시 배포한다.
+# (Overpass 공용 서버에 대량으로 묻지 않는다. 대량 다운로드는 Geofabrik 파일을 쓰는 것이 올바른 방법이다)
 # 받다가 문제가 생기면(너무 적게 받음 등) 발행하지 않으므로 지난주 데이터가 그대로 유지된다.
 on:
   schedule:
@@ -17,11 +18,22 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 20
-      - name: Download toilets from OpenStreetMap
-        run: node tools/build-toilet-data.mjs out
+          python-version: '3.12'
+      - name: Install pyosmium
+        run: pip install osmium
+      - name: Download OpenStreetMap country files (Geofabrik)
+        run: |
+          mkdir -p pbf && cd pbf
+          for r in south-korea japan; do
+            curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf https://download.geofabrik.de/asia/$r-latest.osm.pbf
+            curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf.md5 https://download.geofabrik.de/asia/$r-latest.osm.pbf.md5
+            echo "$(cut -d' ' -f1 $r.osm.pbf.md5)  $r.osm.pbf" | md5sum -c -
+          done
+          ls -lh
+      - name: Pick out toilets and split into tiles
+        run: python tools/build_toilet_data.py out pbf/south-korea.osm.pbf pbf/japan.osm.pbf
       - name: Publish to toilet-data branch (history kept to one commit)
         run: |
           cd out
