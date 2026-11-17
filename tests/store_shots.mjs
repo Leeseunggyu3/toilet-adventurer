@@ -9,11 +9,11 @@ mkdirSync(OUT, { recursive: true });
 const ago = m => new Date(Date.now() - m * 60000).toISOString();
 
 const LANGS = {
-  ko: { locale: 'ko-KR', tz: 'Asia/Seoul', pos: { latitude: 37.5284, longitude: 126.9327 }, nick: '🐼 용감한 탐험가', places: ['여의도 한강공원 화장실', '여의나루역 화장실', '공중화장실', '63빌딩 앞 화장실'], chat: [
-    ['u1', '🦊 빠른 여우', '여의나루역 쪽 화장실 휴지 있나요?', 'question', 25],
+  ko: { locale: 'ko-KR', tz: 'Asia/Seoul', pos: { latitude: 37.5784, longitude: 126.9894 }, nick: '🐼 용감한 탐험가', places: ['창경궁 화장실', '대학로 공원 화장실', '공중화장실', '원서동 화장실'], chat: [
+    ['u1', '🦊 빠른 여우', '창경궁 정문 쪽 화장실 휴지 있나요?', 'question', 25],
     ['u2', '🐢 느긋한 거북', '방금 다녀왔는데 휴지 넉넉하고 깨끗해요!', 'answer', 21, 3],
-    ['u3', '🐧 펭귄 탐험가', '한강공원 화장실 줄이 좀 길어요. 조금 더 걸으면 비어 있어요', 'chat', 12],
-    ['u4', '🦉 밤샘 부엉이', '야경 보러 왔다가 덕분에 살았습니다 🙏', 'chat', 4],
+    ['u3', '🐧 펭귄 탐험가', '궁 안 화장실은 줄이 좀 길어요. 조금 더 걸으면 비어 있어요', 'chat', 12],
+    ['u4', '🦉 밤샘 부엉이', '고궁 산책하다가 덕분에 살았습니다 🙏', 'chat', 4],
   ] },
   en: { locale: 'en-US', tz: 'Asia/Tokyo', pos: { latitude: 35.7141, longitude: 139.7741 }, nick: '🐼 Brave Explorer', places: ['Ueno Park Toilet', 'Museum Side Toilet', 'Public Toilet', 'Pond Toilet'], chat: [
     ['u1', '🦊 Swift Fox', 'Is there toilet paper in the one near the museum?', 'question', 25],
