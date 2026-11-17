@@ -13,9 +13,14 @@
 */
 (() => {
   const uid = (() => { try { let u = localStorage.getItem('ghc-uid'); if (!u) { u = 'x' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('ghc-uid', u); } return u; } catch (e) { return 'anon'; } })();
-  const ADJ = ['용감한', '수상한', '빠른', '졸린', '전설의', '친절한', '배고픈', '반짝이는', '조용한', '급한'];
-  const NOUN = ['변기탐험가', '휴지수호자', '물내림장인', '칸막이요정', '비데마스터', '화장실레인저'];
-  const defaultNick = () => { let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) >>> 0; return `${ADJ[h % ADJ.length]} ${NOUN[(h >>> 4) % NOUN.length]} #${(h % 9000) + 1000}`; };
+  // 처음 만들어지는 닉네임은 그 사람의 언어로 (이후에는 사용자가 바꾸기 전까지 그대로)
+  const NICK_WORDS = {
+    ko: [['용감한', '수상한', '빠른', '졸린', '전설의', '친절한', '배고픈', '반짝이는', '조용한', '급한'], ['변기탐험가', '휴지수호자', '물내림장인', '칸막이요정', '비데마스터', '화장실레인저']],
+    en: [['Brave', 'Sneaky', 'Swift', 'Sleepy', 'Legendary', 'Kind', 'Hungry', 'Sparkly', 'Quiet', 'Urgent'], ['Explorer', 'PaperGuard', 'FlushMaster', 'StallSprite', 'BidetHero', 'LooRanger']],
+    ja: [['勇敢な', 'あやしい', '素早い', '眠たい', '伝説の', 'やさしい', '腹ぺこ', 'きらめく', '静かな', 'あせる'], ['トイレ探検家', '紙の守護者', '水流の達人', '個室の妖精', 'ビデマスター', 'トイレレンジャー']],
+  };
+  const [ADJ, NOUN] = NICK_WORDS[(window.I18N && window.I18N.lang) || 'ko'] || NICK_WORDS.ko;
+  const defaultNick = () => { let h = 0; for (const c of uid) h = (h * 31 + c.charCodeAt(0)) >>> 0; return `${ADJ[h % ADJ.length]}${(window.I18N && window.I18N.lang) === 'ja' ? '' : ' '}${NOUN[(h >>> 4) % NOUN.length]} #${(h % 9000) + 1000}`; };
   const getNick = () => { try { return localStorage.getItem('ghc-nick') || defaultNick(); } catch (e) { return defaultNick(); } };
   const getAvatar = () => { try { return localStorage.getItem('ghc-avatar') || '🚽'; } catch (e) { return '🚽'; } };
   // 서버에는 "아이콘 이름" 한 덩어리로 저장한다 (스키마 변경 없이 채팅·1호 탐험가 기록에 아이콘이 따라간다)

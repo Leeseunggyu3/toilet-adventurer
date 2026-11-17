@@ -335,6 +335,48 @@ try {
   check('미리 받은 데이터: 데이터가 없는 칸에서는 Overpass로 직접', db.overpassCalls > 0, db.overpassCalls + '번 호출');
   await page.unroute('**/data/index.json'); await page.unroute('**/data/t/75_253.json*');
 
+  // ---- 다국어: 일본어·영어로 모든 화면을 열어 보고, 번역되지 않은 한국어가 남았는지 찾는다 ----
+  // (사용자가 쓴 글·닉네임·화장실 이름처럼 data-raw 표시가 있는 곳은 제외)
+  // 사용자가 만든 글(닉네임, 화장실 이름)은 번역 대상이 아니므로 문장 속에 섞여 있어도 지우고 본다
+  const userText = () => [...new Set([...osm.elements.map(e => e.tags.name), ...db.messages.map(m => m.nick), ...db.photos.map(p => p.nick), ...db.visits.map(v => v.nick), ...db.toilets.map(x => x.name), ...db.toilets.map(x => x.nick), ...Object.values(db.profiles || {}).map(p => p.data && p.data.nick)].filter(Boolean))].sort((a, b) => b.length - a.length);
+  const leftovers = async () => { const ut = userText().concat(await page.evaluate(() => [window.Backend.me().nick, window.Backend.me().full])); return page.evaluate(ut => {
+    const H = /[가-힣]/, out = new Set(), strip = s => ut.reduce((a, u) => a.split(u).join(''), s);
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) { if (!H.test(n.data)) continue; const p = n.parentElement; if (!p || p.closest('script,style,#map,[data-raw]')) continue; if (H.test(strip(n.data))) out.add(n.data.trim()); }
+    for (const el of document.querySelectorAll('[placeholder],[title],[alt]')) { if (el.closest('#map,[data-raw]')) continue; for (const a of ['placeholder', 'title', 'alt']) { const v = el.getAttribute(a); if (v && H.test(v)) out.add('@' + a + ': ' + v); } }
+    if (H.test(document.title)) out.add('<title> ' + document.title);
+    return [...out];
+  }, ut); };
+  await ctx.setGeolocation({ latitude: 37.5665, longitude: 126.978 });
+  for (const L of ['ja', 'en']) {
+    await page.evaluate(l => localStorage.setItem('ghc-lang', l), L);
+    await page.goto(BASE + '/index.html?lang=' + L); await page.waitForTimeout(3500);
+    const found = new Set(), step = async (name, fn) => { try { await fn(); await page.waitForTimeout(350); } catch (e) { found.add(`(${name} 단계 실패: ${String(e).slice(0, 80)})`); } (await leftovers()).forEach(x => found.add(x)); };
+    await step('첫 화면', async () => {});
+    await step('튜토리얼', async () => { await page.click('#helpBtn'); for (let i = 0; i < 5; i++) { await page.click('#tutNext'); (await leftovers()).forEach(x => found.add(x)); } });
+    await step('사용법', async () => { await page.click('.htab[data-htab=guide]'); await page.evaluate(() => document.querySelectorAll('#htab-guide details').forEach(d => d.open = true)); });
+    await step('의견', async () => { await page.click('.htab[data-htab=fb]'); await page.click('#helpClose'); });
+    await step('변기 창', async () => { await openByName('공원 화장실'); await page.waitForTimeout(800); });
+    await step('사진 보기', async () => { if (await page.locator('#photos .ph').count()) { await page.click('#photos .ph >> nth=0'); (await leftovers()).forEach(x => found.add(x)); await page.click('#photoClose'); } });
+    await step('변기 이야기', async () => { await page.click('.tab[data-tab=talk]'); await page.waitForTimeout(500); await page.click('#shClose'); });
+    await step('동네 광장', async () => { await page.click('#areaBtn'); await page.waitForTimeout(800); });
+    await step('다른 탐험가', async () => { if (await page.locator('#areaChat .nicklink[data-uid="other1"]').count()) { await page.click('#areaChat .nicklink[data-uid="other1"]'); await page.waitForTimeout(600); (await leftovers()).forEach(x => found.add(x)); await page.click('#peekClose'); } else await page.click('#areaClose'); });
+    await step('수첩', async () => { await page.click('#profBtn'); await page.waitForTimeout(600); for (const c of await page.locator('#titleCats button').all()) { await c.click(); (await leftovers()).forEach(x => found.add(x)); } });
+    await step('꾸미기', async () => { await page.click('#decoBtn'); (await leftovers()).forEach(x => found.add(x)); await page.click('#decoCancel'); await page.click('#profClose'); });
+    await step('상점', async () => { await page.click('#coinBtn'); for (const c of await page.locator('#shopTabs button').all()) { await c.click(); (await leftovers()).forEach(x => found.add(x)); } await page.click('#shopClose'); });
+    await step('변기탐지', async () => { await page.click('#sosBtn'); await page.waitForTimeout(400); (await leftovers()).forEach(x => found.add(x)); await page.click('#sosClose'); });
+    await step('등록', async () => { await page.click('#addBtn'); (await leftovers()).forEach(x => found.add(x)); await page.click('#addCancel'); });
+    await step('미션', async () => { await page.click('#missionBtn'); await page.waitForTimeout(300); });
+    check(`다국어(${L}): 화면에 번역되지 않은 한국어가 없음`, found.size === 0, [...found].slice(0, 12).join(' | '));
+  }
+  // 대표 문장이 실제로 바뀌는지, 사용자 글은 그대로인지
+  check('다국어(en): 변기탐지 버튼이 영어', (await page.innerText('#sosBtn')).includes('Toilet Radar'), await page.innerText('#sosBtn'));
+  check('다국어(en): 굵은 글씨가 섞인 문단도 번역', (await page.evaluate(() => document.querySelector('#htab-guide p[data-i18n-html]').innerHTML)).startsWith('<b>Loo Power</b>'));
+  check('다국어(en): 틀이 있는 문장 번역 (주변 화장실 3곳 → Loaded 3 toilets nearby)', await page.evaluate(() => I18N.tr('주변 화장실 3곳 불러옴') === 'Loaded 3 toilets nearby' && I18N.tr('24m · 도보 1분 · 유료') === '24m · 1 min walk · Paid' && I18N.tr('인증 실패: 직전 인증 지점에서 너무 빨리 이동했어요. 잠시 후 다시 인증해 주세요.').startsWith('Check-in failed: You moved too fast')));
+  check('다국어: 채팅 글과 닉네임은 번역하지 않음', await page.evaluate(() => { const m = [...document.querySelectorAll('#areaChat [data-raw]')]; return m.length > 0 && m.some(x => /[가-힣]/.test(x.textContent)); }));
+  await page.click('#helpBtn'); await page.click('.langs button[data-lang="ko"]'); await page.waitForTimeout(3000);
+  check('다국어: 도움말에서 한국어로 되돌리기', (await page.innerText('#sosBtn')).includes('변기탐지') && (await page.evaluate(() => localStorage.getItem('ghc-lang'))) === 'ko');
+
   check('광고: 설정이 꺼져 있으면 광고 자리가 생기지 않음', (await page.locator('.ad-slot').count()) === 0);
   const pv = await page.request.get(BASE + '/privacy.html');
   check('개인정보처리방침 페이지가 열림', pv.ok() && (await pv.text()).includes('개인정보처리방침'));

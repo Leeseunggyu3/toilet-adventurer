@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Toilet Adventure</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; color: #1b2a3a; line-height: 1.7; font-size: 15.5px; }
+  h1 { font-size: 24px; margin-bottom: 4px; } h2 { font-size: 18px; margin: 30px 0 8px; }
+  .meta { color: #667; font-size: 13px; margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0; }
+  th, td { border: 1px solid #e2e5ea; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f6f7f9; }
+  a { color: #5b3df5; } li { margin: 4px 0; }
+  .box { background: #f6f7f9; border-radius: 12px; padding: 12px 16px; margin: 12px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Privacy Policy</h1>
+<div class="meta">Toilet Adventure · Effective November 16, 2026 · Revised November 17, 2026<br>This is a translation of the <a href="privacy.html">Korean original</a>. If they differ, the Korean version applies.</div>
+
+<p>Toilet Adventure (the "Service") is a map service for finding public toilets and recording their condition together. The Service handles only the information it needs, and this page explains what it handles and why.</p>
+
+<h2>1. Information we handle</h2>
+<table>
+  <tr><th>Information</th><th>When</th><th>Where it is stored</th><th>Visible to other users?</th></tr>
+  <tr><td>Current location (GPS)</td><td>When you allow location access</td><td>Used only on your device. Not stored on the server</td><td>No</td></tr>
+  <tr><td>Explorer ID (a random string created on your device)</td><td>On first visit</td><td>Your device, server</td><td>Linked to your posts and records, but not shown on screen</td></tr>
+  <tr><td>Nickname, profile icon, titles, stickers, equipped relics and decorations, Loo Power</td><td>When you create or change your profile</td><td>Your device, server</td><td>Yes</td></tr>
+  <tr><td>Chat messages (Toilet Talk, Neighborhood Square)</td><td>When you post</td><td>Server</td><td>Yes</td></tr>
+  <tr><td>Status reports, check-in records, location and name of toilets you add</td><td>When you use those features</td><td>Server</td><td>Yes (who did it may be shown by nickname)</td></tr>
+  <tr><td>Coins, achievements and other game progress</td><td>While you use the Service</td><td>Your device. Also your account storage if you sign in with Google</td><td>No (except items shown on your profile)</td></tr>
+  <tr><td>Google account email</td><td>Only when you sign in with Google</td><td>Authentication service (Supabase)</td><td>No</td></tr>
+  <tr><td>Photo evidence (photos of toilet entrances or signs)</td><td>When you upload a photo</td><td>Server. Before upload, your device shrinks the photo and removes its location data (EXIF)</td><td>Yes (with the uploader's nickname). Inappropriate photos are hidden after 2 reports</td></tr>
+  <tr><td>Coordinates of the toilet you checked in at</td><td>When you check in</td><td>Server</td><td>No (used to filter out impossible movements)</td></tr>
+  <tr><td>Feedback text, app version, browser type</td><td>When you send feedback</td><td>Server</td><td>No (read only by the operator)</td></tr>
+</table>
+<div class="box">A check-in records the fact that you were near that toilet. Your exact GPS position and your route are not sent to the server; the toilet's own coordinates are. Please note, however, that a history of check-ins can reveal where and when you have been.</div>
+
+<h2>2. Purposes</h2>
+<ul>
+  <li>Showing nearby toilets and linking to directions</li>
+  <li>Sharing toilet status and chat between users</li>
+  <li>Providing game features such as Loo Power and titles, and carrying progress across devices (when signed in)</li>
+  <li>Preventing spam and abuse, fixing bugs, and improving the Service</li>
+</ul>
+
+<h2>3. Retention and deletion</h2>
+<ul>
+  <li>Information stored on your device is deleted when you clear the site's data in your browser.</li>
+  <li>Information stored on the server is kept while the Service is operated.</li>
+  <li>To have your posts, records, profile or account deleted, send a request with your nickname through <b>❓ Help → Send feedback</b> in the app. We will delete them after confirming. Deletion is currently handled manually by the operator, so it may take some time.</li>
+</ul>
+
+<h2>4. Third-party services</h2>
+<p>The Service uses the following third-party services. Your IP address and similar information may be passed to these providers while you use them.</p>
+<table>
+  <tr><th>Provider</th><th>Purpose</th></tr>
+  <tr><td>Supabase</td><td>Database and Google sign-in authentication</td></tr>
+  <tr><td>GitHub Pages</td><td>Hosting the app (web pages)</td></tr>
+  <tr><td>OpenStreetMap, Overpass API</td><td>Map images and toilet locations. For Korea and Japan, pre-downloaded data is used; elsewhere, the map area you are viewing is sent to Overpass</td></tr>
+  <tr><td>Google</td><td>Google sign-in (only if you choose to sign in)</td></tr>
+  <tr><td>Kakao Map, Naver Map, Google Maps</td><td>When you tap a directions button, you are taken to that service with the destination</td></tr>
+</table>
+<p>The Service does not sell personal information. If we introduce advertising in the future, we will add the ad providers and the information they collect to this page first.</p>
+
+<h2>5. Your rights</h2>
+<p>You can request access to, correction of, or deletion of your information. You can change your nickname and profile yourself in the app's 🧭 Explorer's Notebook. You can turn off location access in your browser settings at any time; the map still works without it.</p>
+
+<h2>6. Children</h2>
+<p>The Service is not directed at children under 14, and we do not knowingly collect personal information from children under 14.</p>
+
+<h2>7. Security measures</h2>
+<ul>
+  <li>Posts, reports, check-ins and new toilets are saved only after an identity check with your device's secret key</li>
+  <li>Encryption in transit (HTTPS)</li>
+  <li>Account storage can be read and written only by its owner</li>
+  <li>Profiles can be changed only with your device's secret key</li>
+</ul>
+
+<h2>8. Contact and changes</h2>
+<p>Please contact us through <b>❓ Help → Send feedback</b> in the app. If this policy changes, we will announce it on this page with the effective date.</p>
+
+<p style="margin-top:36px"><a href="./">← Back to Toilet Adventure</a></p>
+</body>
+</html>

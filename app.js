@@ -25,6 +25,8 @@
   // ===== 레벨/랭크 =====
   // 경지: 변기력이 쌓이면 물의 흐름처럼 깊어진다
   const RANKS = [[0, '잠든 물방울'], [100, '첫 물결'], [400, '고요한 수면'], [1000, '소용돌이'], [2500, '깊은 흐름'], [6000, '맑은 근원'], [15000, '무한수류']];
+  // 프로필에는 한국어 원문으로 저장한다 (보는 사람의 언어로 각자 번역됨)
+  function rankName() { let i = 0; for (let j = 0; j < RANKS.length; j++) if (Store.xp >= RANKS[j][0]) i = j; return RANKS[i][1]; }
   function refreshHUD() {
     $('coins').textContent = Store.coins.toLocaleString();
     // 변기력(누적 경험치)과 등급. 게이지는 다음 등급까지 남은 정도
@@ -483,9 +485,9 @@
       const parent = r.parent && byId[r.parent];
       const canHelp = parent && parent.user_id === myId && !mine && !(ach.thanked || {})[r.id];
       return `<div class="msg ${mine ? 'mine' : ''} ${r.kind === 'question' ? 'question' : ''}" data-id="${r.id}">
-        <div class="who"><span class="nicklink" data-uid="${esc(r.user_id)}" data-nick="${esc(r.nick)}">${r.kind === 'question' ? '❓ ' : ''}${esc(r.nick)}</span><span>${ago(r.at)}</span></div>
-        ${parent ? `<div style="font-size:11px;opacity:.7;margin-bottom:3px">↳ ${esc(parent.text.slice(0, 30))}</div>` : ''}
-        <div>${esc(r.text)}</div>
+        <div class="who">${r.kind === 'question' ? '<span>❓</span> ' : ''}<span class="nicklink" data-raw data-uid="${esc(r.user_id)}" data-nick="${esc(r.nick)}">${esc(r.nick)}</span><span>${ago(r.at)}</span></div>
+        ${parent ? `<div data-raw style="font-size:11px;opacity:.7;margin-bottom:3px">↳ ${esc(parent.text.slice(0, 30))}</div>` : ''}
+        <div data-raw>${esc(r.text)}</div>
         ${r.helpful ? `<div class="help">👍 도움됐어요 ${r.helpful}</div>` : ''}
         <div class="act">${!mine ? `<button data-reply="${r.id}">답하기</button>` : ''}${canHelp ? `<button data-help="${r.id}">👍 도움됐어요</button>` : ''}</div>
       </div>`;
@@ -549,8 +551,9 @@
     n1: () => ach.v.some(([, t]) => new Date(t).getHours() < 5),
     k3: () => Store.xp >= 1000,
   };
-  const TITLES = (window.GHC_TITLES || []).filter(t => COND[t.id]).map(t => Object.assign({}, t, { ok: () => serverMode ? !!(srv && srv.titles.includes(t.id)) : COND[t.id]() }));
-  const CATS = window.GHC_TITLE_CATS || [];
+  const L10N = window.I18N || { pick: (o, f) => o && o[f], tr: s => s, lang: 'ko' };
+  const TITLES = (window.GHC_TITLES || []).filter(t => COND[t.id]).map(t => Object.assign({}, t, { name: L10N.pick(t, 'name'), desc: L10N.pick(t, 'desc'), ok: () => serverMode ? !!(srv && srv.titles.includes(t.id)) : COND[t.id]() }));
+  const CATS = (window.GHC_TITLE_CATS || []).map(c => Object.assign({}, c, { name: L10N.pick(c, 'name') }));
   const TITLE = Object.fromEntries(TITLES.map(t => [t.id, t]));
   // 유물: 얻기 어려운 일부 칭호에만 딸려 온다. 여러 개를 함께 장착할 수 있고, 효과는 일부러 작게 잡았다
   // 유물 효과는 일부러 작다. 인증 거리(열쇠 꾸러미)를 빼면 전부 '오늘의 보너스'에 조금씩 더해지고, 서버가 칭호를 확인한 유물만 적용된다
@@ -563,7 +566,7 @@
     n1:  { fx: '오늘의 보너스 +3', e: { bonus: 3 } },
     k3:  { fx: '오늘의 보너스 +5', e: { bonus: 5 } },
   };
-  const RELICS = {}; for (const id in RELIC_FX) if (TITLE[id]) RELICS[id] = Object.assign({ ic: '🏺', name: '이름 없는 유물' }, (window.GHC_RELICS || {})[id], RELIC_FX[id]);
+  const RELICS = {}; for (const id in RELIC_FX) if (TITLE[id]) RELICS[id] = Object.assign({ ic: '🏺', name: '이름 없는 유물' }, (window.GHC_RELICS || {})[id], RELIC_FX[id], { name: L10N.pick((window.GHC_RELICS || {})[id], 'name') || '이름 없는 유물' });
   const ownedRelics = () => Object.keys(RELICS).filter(id => ach.got[id]);
   const equippedRelics = () => (ach.relics || []).filter(id => RELICS[id] && ach.got[id]);
   // 장착한 유물의 효과 합계
@@ -686,7 +689,7 @@
   const STICKER_OK = new Set(TITLES.map(t => t.st).concat(SHOP.pack.items.flatMap(p => p.st)));
   function achCheck() {
     let news = 0;
-    for (const t of TITLES) if (!ach.got[t.id] && t.ok()) { ach.got[t.id] = Date.now(); if (!ach.title) ach.title = t.id; news++; const d = 2600 + news * 2300; const rl = RELICS[t.id]; setTimeout(() => toast(`🏅 칭호 획득: ${t.name} · 스티커 ${t.st}${rl ? ' · 유물 ' + rl.name : ''} 해금`, 4200), d); }
+    for (const t of TITLES) if (!ach.got[t.id] && t.ok()) { ach.got[t.id] = Date.now(); if (!ach.title) ach.title = t.id; news++; const d = 2600 + news * 2300; const rl = RELICS[t.id]; setTimeout(() => toast(rl ? `🏅 칭호 획득: ${t.name} · 스티커 ${t.st} · 유물 ${rl.name} 해금` : `🏅 칭호 획득: ${t.name} · 스티커 ${t.st} 해금`, 4200), d); }
     achSave(); if (news) queueProfileSync();
   }
   function achEvent(kind, id) {
@@ -697,7 +700,7 @@
   // ---- 내 프로필 데이터 (서버에 올라가는 모양) ----
   function myProfile() {
     const m = B.me();
-    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: $('rankLabel').textContent, power: Store.xp, relics: equippedRelics(), bg: shopSt().bg, frame: shopSt().frame, color: shopSt().color, stickers: ach.stickers, found: distinct() };
+    return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: rankName(), power: Store.xp, relics: equippedRelics(), bg: shopSt().bg, frame: shopSt().frame, color: shopSt().color, stickers: ach.stickers, found: distinct() };
   }
   let syncT = null;
   function queueProfileSync() { clearTimeout(syncT); syncT = setTimeout(() => B.saveProfile(myProfile()).catch(e => console.warn('profile sync', e)), 1500); }
@@ -708,7 +711,7 @@
     el.style.background = cssOf('bg', p.bg);
     el.innerHTML = `<div class="b-main"><div class="me-avatar" style="${cssOf('frame', p.frame)}" ${mine ? 'id="meAvatar"' : ''}>${esc(p.avatar || '🚽')}</div><div>
         ${t ? `<div class="b-title">「${esc(t.name)}」</div>` : ''}
-        <div class="me-name" style="${cssOf('color', p.color) ? 'color:' + cssOf('color', p.color) : ''}" ${mine ? 'id="meName"' : ''}>${esc(p.nick || '이름 없는 탐험가')}</div>
+        <div class="me-name" data-raw="exact" style="${cssOf('color', p.color) ? 'color:' + cssOf('color', p.color) : ''}" ${mine ? 'id="meName"' : ''}>${esc(p.nick || '이름 없는 탐험가')}</div>
         <div class="me-sub">${esc(p.rank || '잠든 물방울')} · 변기력 ${(+p.power || 0).toLocaleString()}</div></div></div>`
       + cleanStickers(stickers).map((s, i) => `<span class="stk" data-i="${i}" style="left:${s.x}%;top:${s.y}%;font-size:${Math.round(30 * s.z)}px">${s.s}</span>`).join('');
   }
@@ -824,7 +827,7 @@
     const total = v.reduce((a, x) => a + x.count, 0);
     $('stToilets').textContent = v.length; $('stVisits').textContent = total; $('stCoins').textContent = Store.coins.toLocaleString();
     achCheck();
-    $('dex').innerHTML = v.length ? v.map(x => `<div><span>🚻 ${esc(x.toilet_name || x.toilet_id)}</span><small>${x.count}회 · ${ago(x.last)}</small></div>`).join('') : '<div class="empty">아직 도감이 비어 있어요. 도착 인증으로 첫 변기를 등록하세요!</div>';
+    $('dex').innerHTML = v.length ? v.map(x => `<div><span>🚻 <span data-raw="exact">${esc(x.toilet_name || x.toilet_id)}</span></span><small>${x.count}회 · ${ago(x.last)}</small></div>`).join('') : '<div class="empty">아직 도감이 비어 있어요. 도착 인증으로 첫 변기를 등록하세요!</div>';
   };
   $('profClose').onclick = () => $('profile').classList.add('hidden');
   const AVATARS = ['🚽', '🧻', '🪠', '🧼', '🚿', '🛁', '🧽', '🪣', '💩', '🧴', '🚰', '💧', '🫧', '🧭', '🗺️', '🔦', '🏕️', '🥾', '🎒', '⛑️', '🦝', '🐸', '🐧', '🦆', '🐙', '🦖', '🐢', '🦊', '👻', '👽', '🤖', '🥷', '🧙', '🦸', '🧑‍🚀', '🕵️'];
@@ -876,6 +879,8 @@
   function closeHelp() { $('help').classList.add('hidden'); try { localStorage.setItem('ghc-tut-done', '1'); } catch (e) {} }
   document.querySelectorAll('.htab').forEach(b => b.onclick = () => helpTab(b.dataset.htab));
   $('helpBtn').onclick = () => openHelp('tut');
+  document.querySelectorAll('.langs button').forEach(b => { b.classList.toggle('on', b.dataset.lang === L10N.lang); b.onclick = () => window.I18N && window.I18N.set(b.dataset.lang); });
+  if (L10N.lang !== 'ko') $('privacyLink').href = 'privacy-en.html';
   $('helpClose').onclick = closeHelp;
   $('tutPrev').onclick = () => { if (tutI > 0) { tutI--; renderTut(); } };
   $('tutNext').onclick = () => { if (tutI < TUT.length - 1) { tutI++; renderTut(); } else { closeHelp(); achEvent('tut'); if (serverMode) B.claimTut().then(applyWallet).catch(() => {}); } };
