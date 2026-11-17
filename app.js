@@ -730,7 +730,12 @@
     return { nick: m.nick, avatar: m.avatar, title: ach.title, titles: Object.keys(ach.got), rank: rankName(), power: Store.xp, relics: equippedRelics(), bg: shopSt().bg, frame: shopSt().frame, color: shopSt().color, stickers: ach.stickers, found: distinct() };
   }
   let syncT = null;
-  function queueProfileSync() { clearTimeout(syncT); syncT = setTimeout(() => B.saveProfile(myProfile()).catch(e => console.warn('profile sync', e)), 1500); }
+  // 바뀐 게 있을 때만 서버에 올린다 (지갑을 새로 볼 때마다 같은 카드를 다시 올리지 않게)
+  let profSent = null;
+  function queueProfileSync() {
+    clearTimeout(syncT);
+    syncT = setTimeout(() => { const p = myProfile(), sig = JSON.stringify(p); if (sig === profSent) return; B.saveProfile(p).then(() => { profSent = sig; }).catch(e => console.warn('profile sync', e)); }, 1500);
+  }
   // ---- 프로필 카드 그리기 ----
   function cleanStickers(list) { return (Array.isArray(list) ? list : []).filter(s => s && STICKER_OK.has(s.s) && isFinite(s.x) && isFinite(s.y)).slice(0, 10).map(s => ({ s: s.s, x: Math.max(4, Math.min(96, +s.x)), y: Math.max(8, Math.min(92, +s.y)), z: Math.max(0.5, Math.min(2.5, +s.z || 1)) })); }
   function drawBoard(el, p, stickers, mine) {

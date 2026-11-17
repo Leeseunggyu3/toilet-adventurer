@@ -24,7 +24,10 @@ window.Auth = (() => {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   })();
 
-  async function token() {
+  // 토큰 갱신은 한 번에 하나만 (동시에 두 번 갱신하면 서버가 같은 갱신 토큰 재사용으로 보고 로그인을 끊을 수 있다)
+  let refreshing = null;
+  function token() { return refreshing || (refreshing = token0().finally(() => { refreshing = null; })); }
+  async function token0() {
     if (!sess) return null;
     if (sess.expires_at - Date.now() < 60000) {
       if (!sess.refresh_token) { sess = null; keep(); return null; }
