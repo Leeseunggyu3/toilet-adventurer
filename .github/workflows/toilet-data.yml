@@ -26,10 +26,17 @@ jobs:
       - name: Download OpenStreetMap country files (Geofabrik)
         run: |
           mkdir -p pbf && cd pbf
+          # 파일은 매일 새로 바뀌므로, 체크섬을 먼저 받고 파일을 받은 뒤 맞는지 확인한다. 받는 사이에 바뀌었으면 다시 받는다
           for r in south-korea japan; do
-            curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf https://download.geofabrik.de/asia/$r-latest.osm.pbf
-            curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf.md5 https://download.geofabrik.de/asia/$r-latest.osm.pbf.md5
-            echo "$(cut -d' ' -f1 $r.osm.pbf.md5)  $r.osm.pbf" | md5sum -c -
+            ok=0
+            for try in 1 2 3; do
+              curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf.md5 https://download.geofabrik.de/asia/$r-latest.osm.pbf.md5
+              curl -fsSL --retry 5 --retry-delay 30 -o $r.osm.pbf https://download.geofabrik.de/asia/$r-latest.osm.pbf
+              if echo "$(cut -d' ' -f1 $r.osm.pbf.md5)  $r.osm.pbf" | md5sum -c -; then ok=1; break; fi
+              echo "$r: 체크섬이 맞지 않음 (받는 중에 새 파일로 바뀌었을 수 있음). 2분 뒤 다시 받기 ($try/3)"
+              sleep 120
+            done
+            [ $ok = 1 ] || { echo "$r: 세 번 모두 체크섬 불일치"; exit 1; }
           done
           ls -lh
       - name: Pick out toilets and split into tiles
