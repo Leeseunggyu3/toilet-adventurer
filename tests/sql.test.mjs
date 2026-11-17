@@ -214,6 +214,24 @@ const P4 = 'trust_d', K4 = 'td-secret-td-secret-td';
 await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [P4, K4, 'home_d', 'd', 'd', 540, 36.0, 128.0]);
 let up = 0; for (let i = 0; i < 6; i++) if ((await fails('select post_photo($1,$2,$3,$4,$5)', [P4, K4, 'Z' + i, 'exists', IMG])) === null) up++;
 check('사진: 하루 5장까지', up === 5, up);
+// 지도에 보이는 변기만 집계
+check('신고 집계: 고른 변기만 돌려줌', JSON.stringify((await q(`select toilet_id from toilet_flags(array['Y']::text[])`)).map(r => r.toilet_id)) === '["Y"]');
+check('신고 집계: 고른 변기에 신고가 없으면 빈 결과', (await q(`select * from toilet_flags(array['nothing']::text[])`)).length === 0);
+// 미리보기와 변기당 사진 수 제한
+const TH = 'data:image/jpeg;base64,' + 'B'.repeat(300);
+const P5 = 'trust_e', K5 = 'te-secret-te-secret-te', P6 = 'trust_f', K6 = 'tf-secret-tf-secret-tf';
+for (const [p, k] of [[P5, K5], [P6, K6]]) { await db.query('select post_visit($1,$2,$3,$4,$5,$6,$7,$8)', [p, k, 'home_' + p, 'h', 'h', 540, 36.0, 128.0]); }
+await db.query('select post_photo($1,$2,$3,$4,$5,$6,$7)', [P5, K5, 'W', 'exists', IMG, 'e', TH]);
+check('사진: 미리보기가 함께 저장', (await q(`select thumb from photos where toilet_id='W'`))[0].thumb === TH);
+await db.query('select post_photo($1,$2,$3,$4,$5,$6,$7)', [P5, K5, 'W', 'exists', IMG, 'e', 'javascript:alert(1)']);
+check('사진: 형식이 틀린 미리보기는 버림', (await q(`select thumb from photos where toilet_id='W' order by id desc limit 1`))[0].thumb === null);
+for (let i = 0; i < 3; i++) await db.query('select post_photo($1,$2,$3,$4,$5)', [P5, K5, 'W', 'exists', IMG]);
+for (let i = 0; i < 5; i++) await db.query('select post_photo($1,$2,$3,$4,$5)', [P6, K6, 'W', 'exists', IMG]);
+check('사진: 변기 하나에 최근 8장만 남음', (await q(`select count(*)::int n from photos where toilet_id='W'`))[0].n === 8);
+const st = (await q(`select toilet_stats('X', $1) s`, [P3]))[0].s;
+const vX = (await q(`select count(*)::int n, count(distinct user_id)::int e from visits where toilet_id='X'`))[0];
+check('변기 기록: 서버가 방문 수·탐험가 수·내 방문을 셈', st.visits === vX.n && st.explorers === vX.e && st.mine >= 1 && st.first_nick === 'c', JSON.stringify(st));
+check('변기 기록: 기록이 없는 변기는 0', (await q(`select toilet_stats('nowhere') s`))[0].s.visits === 0);
 check('익명 사용자는 숨김 여부 칸을 직접 볼 수 없음', !(await q(`select has_column_privilege('anon','photos','hidden','select') x`))[0].x);
 check('익명 사용자는 사진 테이블에 직접 쓸 수 없음', !(await priv('anon', 'photos', 'insert')));
 

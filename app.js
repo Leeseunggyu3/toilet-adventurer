@@ -264,16 +264,18 @@
     if (sel !== t) return;
     photoRows = rows;
     el.innerHTML = rows.length
-      ? rows.map((p, i) => `<button class="ph ${p.kind === 'gone' ? 'gone' : ''}" data-i="${i}"><img src="${p.data.startsWith('data:image/jpeg;base64,') ? p.data : ''}" alt="" loading="lazy"><span>${p.kind === 'gone' ? '없어짐' : '있음'}</span></button>`).join('')
+      ? rows.map((p, i) => { const src = jpeg(p.thumb) || jpeg(p.data); return `<button class="ph ${p.kind === 'gone' ? 'gone' : ''}" data-i="${i}">${src ? `<img src="${src}" alt="" loading="lazy">` : '<b>📷</b>'}<span>${p.kind === 'gone' ? '없어짐' : '있음'}</span></button>`; }).join('')
       : '<div class="none">아직 사진이 없어요</div>';
     el.querySelectorAll('.ph').forEach(b => b.onclick = () => openPhoto(photoRows[+b.dataset.i]));
   }
+  const jpeg = d => typeof d === 'string' && d.startsWith('data:image/jpeg;base64,') ? d : '';
   let viewing = null;
-  function openPhoto(p) {
-    viewing = p; $('photoBig').src = p.data;
+  async function openPhoto(p) {
+    viewing = p; $('photoBig').src = jpeg(p.thumb) || jpeg(p.data);
     $('photoMeta').textContent = `${p.kind === 'gone' ? '없어졌어요' : '있어요'} · ${p.nick || '탐험가'} · ${ago(p.at)}`;
     $('photoReport').classList.toggle('hidden', p.user_id === B.me().id);
     $('photoView').classList.remove('hidden');
+    if (!jpeg(p.data)) { try { p.data = await window.Backend.photoData(p.id); } catch (e) {} if (viewing === p && jpeg(p.data)) $('photoBig').src = p.data; }
   }
   $('photoClose').onclick = () => { $('photoView').classList.add('hidden'); $('photoBig').src = ''; viewing = null; };
   $('photoReport').onclick = async () => {
@@ -283,18 +285,22 @@
     $('photoClose').onclick(); if (sel) loadPhotos(sel);
   };
   // 사진 줄이기: 긴 변 720px JPEG로 다시 그린다. 다시 그리면 사진 속 위치 정보(EXIF)가 사라진다
+  // 원본은 약 110KB 이하, 목록용 미리보기(긴 변 160px)는 약 12KB 이하
   async function shrink(file) {
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error('사진을 읽지 못했어요')); im.src = url; });
-      for (const [max, qlt] of [[720, .62], [600, .5], [480, .42]]) {
+      const draw = (max, qlt) => {
         const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
         const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-        const d = cv.toDataURL('image/jpeg', qlt);
-        if (d.length <= 190000) return d;
-      }
-      throw new Error('사진이 너무 커요');
+        return cv.toDataURL('image/jpeg', qlt);
+      };
+      let data = null;
+      for (const [max, qlt] of [[640, .6], [560, .5], [480, .42], [400, .38]]) { const d = draw(max, qlt); if (d.length <= 110000) { data = d; break; } }
+      if (!data) throw new Error('사진이 너무 커요');
+      let thumb = draw(160, .55); if (thumb.length > 16000) thumb = draw(120, .4);
+      return { data, thumb: thumb.length <= 16000 ? thumb : null };
     } finally { URL.revokeObjectURL(url); }
   }
   function pickPhoto(kind) {
@@ -306,9 +312,9 @@
   $('photoNo').onclick = () => pickPhoto('gone');
   $('photoFile').onchange = async () => {
     const f = $('photoFile').files[0], t = sel; if (!f || !t) return;
-    let data; try { data = await shrink(f); } catch (e) { return toast(String(e.message || e)); }
+    let pic; try { pic = await shrink(f); } catch (e) { return toast(String(e.message || e)); }
     try {
-      await window.Backend.postPhoto(t.id, photoKind, data);
+      await window.Backend.postPhoto(t.id, photoKind, pic.data, pic.thumb);
       toast(photoKind === 'exists' ? '📷 고마워요! 이 화장실이 있다는 증거가 올라갔어요' : '📷 고마워요! 없어졌다는 증거가 올라갔어요', 3000);
       loadPhotos(t); syncShared(true);
     } catch (e) { toast('사진 올리기 실패: ' + String(e.message || e).slice(0, 140), 6000); }
@@ -387,9 +393,12 @@
     syncBusy = true; lastSync = Date.now();
     try {
       const c = map.getCenter();
-      const [reps, flags, ut] = await Promise.all([SB.recentReports(), SB.toiletFlags(), SB.toiletsIn(c.lat, c.lng, 0.05)]);
+      const ut = await SB.toiletsIn(c.lat, c.lng, 0.05);
       for (const r of ut) if (!toilets.has(r.id)) { const t = { id: r.id, lat: r.lat, lng: r.lng, name: r.name, src: 'user', by: r.nick, tags: { access: r.access } }; toilets.set(t.id, t); addMarker(t); }
-      for (const t of toilets.values()) { const f = flags[t.id]; t.flags = f ? f.flags : 0; t.flagged = !!(f && f.hidden); }
+      // 지도 가운데와 내 위치 주변 변기만 묻는다 (사람이 많아져도 한 사람이 받는 양이 늘지 않게)
+      const ids = nearIds(c);
+      const [reps, flags] = await Promise.all([SB.recentReports(ids), SB.toiletFlags(ids)]);
+      for (const id of ids) { const t = toilets.get(id), f = flags[id]; if (t) { t.flags = f ? f.flags : 0; t.flagged = !!(f && f.hidden); } }
       if (sel && !$('sheet').classList.contains('hidden')) renderFlagNote(sel);
       const changed = Store.mergeRemote(reps);
       if (changed || ut.length) restyle();
@@ -397,6 +406,15 @@
     } catch (e) { console.warn('sync failed', e); }
     syncBusy = false;
     if (syncAgain) { syncAgain = false; syncShared(true); }
+  }
+  function nearIds(c) {
+    const pts = [[c.lat, c.lng]]; if (me) pts.push(me);
+    const out = [];
+    for (const t of toilets.values()) {
+      let d = Infinity; for (const p of pts) d = Math.min(d, dist(p[0], p[1], t.lat, t.lng));
+      if (d < 2500) out.push([d, t.id]);
+    }
+    return out.sort((a, b) => a[0] - b[0]).slice(0, 200).map(x => x[1]);
   }
   map.on('moveend', () => syncShared(false));
   setInterval(() => { if (!document.hidden) syncShared(false); }, 45000);

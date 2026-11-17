@@ -49,7 +49,8 @@
     async postReport() {} async recentReports() { return []; } async flagCounts() { return {}; }
     async toiletFlags() { return {}; }
     async listPhotos(toilet_id) { return (this.db.photos || []).filter(p => p.toilet_id === toilet_id).slice(-6).reverse(); }
-    async postPhoto(toilet_id, kind, data) { (this.db.photos || (this.db.photos = [])).push({ id: Date.now(), toilet_id, kind, data, user_id: uid, nick: fullNick(), at: new Date().toISOString() }); this._save(); }
+    async postPhoto(toilet_id, kind, data, thumb) { (this.db.photos || (this.db.photos = [])).push({ id: Date.now(), toilet_id, kind, data, thumb, user_id: uid, nick: fullNick(), at: new Date().toISOString() }); this._save(); }
+    async photoData(id) { const p = (this.db.photos || []).find(x => x.id === id); return p ? p.data : null; }
     async reportPhoto() { return false; }
     async addToilet() {} async toiletsIn() { return []; }
     async saveProfile(data) { (this.db.profiles || (this.db.profiles = {}))[uid] = data; this._save(); }
@@ -105,35 +106,49 @@
     claimMission(toilet) { return this._rpc('claim_mission', { p_user: uid, p_secret: secret, p_toilet: toilet }); }
     claimTut() { return this._rpc('claim_tut', { p_user: uid, p_secret: secret }); }
     buyItem(item) { return this._rpc('buy_item', { p_user: uid, p_secret: secret, p_item: item }); }
-    async toiletStats(toilet_id) { return statsFrom(await this._get(`visits?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=user_id,nick,at&order=at.asc&limit=2000`)); }
+    // v8: 서버가 센 숫자만 받는다. v8 전에는 방문 기록을 받아 기기에서 센다
+    async toiletStats(toilet_id) {
+      if (this.statsV8 !== false) {
+        const r = await fetch(`${this.url}/rest/v1/rpc/toilet_stats`, { method: 'POST', headers: this.h, body: JSON.stringify({ p_toilet: toilet_id, p_user: uid }) });
+        if (r.ok) { this.statsV8 = true; const j = await r.json(); return statsOf(+j.visits || 0, +j.explorers || 0, j.first_nick || null, +j.mine || 0); }
+        if (r.status !== 404) throw new Error(`[${r.status}] 변기 기록을 불러오지 못했어요`);
+        this.statsV8 = false;
+      }
+      return statsFrom(await this._get(`visits?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=user_id,nick,at&order=at.asc&limit=2000`));
+    }
     async myVisits() { return groupMine(await this._get(`visits?user_id=eq.${uid}&select=toilet_id,toilet_name,at&order=at.desc&limit=1000`)); }
     async postReport(toilet_id, k, v) {
       return this._signed('post_report', { p_toilet: toilet_id, p_k: k, p_v: v, p_nick: fullNick() },
         () => this._post('reports', { toilet_id, k, v, user_id: uid, nick: fullNick() }));
     }
     // 최근 12시간 상태 보고 (신고 제외). 최신순이라 병합 시 가장 새 값이 남는다
-    async recentReports() {
+    // ids: 지금 지도 주변 변기들. 전 세계 보고를 매번 받지 않는다 (사용자가 늘어도 한 사람이 받는 양은 그대로)
+    async recentReports(ids) {
+      if (!ids || !ids.length) return [];
       const since = new Date(Date.now() - 12 * 3600e3).toISOString();
-      return this._get(`reports?k=neq.flagged&at=gte.${encodeURIComponent(since)}&select=toilet_id,k,v,at&order=at.desc&limit=1000`);
+      return this._get(`reports?toilet_id=${inList(ids)}&k=neq.flagged&at=gte.${encodeURIComponent(since)}&select=toilet_id,k,v,at&order=at.desc&limit=1000`);
     }
     // "화장실 없음" 신고: 변기별 서로 다른 신고자 수
     // "없음" 신고 집계 (v8): 서버가 믿을 만한 신고만 세고, 반박 증거가 생기면 무효로 처리한다. v8이 없으면 예전 방식으로 센다
-    async toiletFlags() {
+    async toiletFlags(ids) {
+      if (!ids || !ids.length) return {};
       if (this.flagsV8 !== false) {
-        const r = await fetch(`${this.url}/rest/v1/rpc/toilet_flags`, { method: 'POST', headers: this.h, body: '{}' });
+        const r = await fetch(`${this.url}/rest/v1/rpc/toilet_flags`, { method: 'POST', headers: this.h, body: JSON.stringify({ p_ids: ids }) });
         if (r.ok) { this.flagsV8 = true; const out = {}; for (const x of await r.json()) out[x.toilet_id] = { flags: x.flags, hidden: x.hidden }; return out; }
         if (r.status !== 404) throw new Error(`[${r.status}] 신고 집계 실패`);
         this.flagsV8 = false;
       }
-      const c = await this.flagCounts(), out = {};
+      const c = await this.flagCounts(ids), out = {};
       for (const id in c) out[id] = { flags: c[id], hidden: c[id] >= 2 };
       return out;
     }
     async listPhotos(toilet_id) {
-      try { return await this._get(`photos?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=id,toilet_id,kind,data,user_id,nick,at&order=at.desc&limit=6`); }
+      // 목록에는 미리보기만. 원본은 눌렀을 때 photoData로 받는다
+      try { return await this._get(`photos?toilet_id=eq.${encodeURIComponent(toilet_id)}&select=id,toilet_id,kind,thumb,user_id,nick,at&order=at.desc&limit=6`); }
       catch (e) { return []; }  // v8 전에는 사진 기능 없음
     }
-    async postPhoto(toilet_id, kind, data) { return this._rpcSigned('post_photo', { p_toilet: toilet_id, p_kind: kind, p_data: data, p_nick: fullNick() }); }
+    async photoData(id) { const rows = await this._get(`photos?id=eq.${encodeURIComponent(id)}&select=data`); return rows[0] ? rows[0].data : null; }
+    async postPhoto(toilet_id, kind, data, thumb) { return this._rpcSigned('post_photo', { p_toilet: toilet_id, p_kind: kind, p_data: data, p_nick: fullNick(), p_thumb: thumb || null }); }
     async reportPhoto(id) { return this._rpcSigned('report_photo', { p_photo: id }); }
     async _rpcSigned(name, body) {
       const r = await fetch(`${this.url}/rest/v1/rpc/${name}`, { method: 'POST', headers: this.h, body: JSON.stringify(Object.assign({ p_user: uid, p_secret: secret }, body)) });
@@ -142,8 +157,8 @@
       if (!r.ok) throw new Error(String((j && j.message) || t).slice(0, 160));
       return j;
     }
-    async flagCounts() {
-      const rows = await this._get(`reports?k=eq.flagged&select=toilet_id,user_id&limit=2000`);
+    async flagCounts(ids) {
+      const rows = await this._get(`reports?toilet_id=${inList(ids)}&k=eq.flagged&select=toilet_id,user_id&limit=2000`);
       const m = {}; for (const r of rows) (m[r.toilet_id] || (m[r.toilet_id] = new Set())).add(r.user_id);
       const out = {}; for (const id in m) out[id] = m[id].size; return out;
     }
@@ -160,12 +175,14 @@
     async toiletsIn(lat, lng, d) { return this._get(`toilets?lat=gte.${lat - d}&lat=lte.${lat + d}&lng=gte.${lng - d}&lng=lte.${lng + d}&select=id,lat,lng,name,access,nick&limit=500`); }
   }
 
+  // PostgREST in.(…) 목록. 변기 id는 영문·숫자라 따옴표로 감싸 안전하게 보낸다
+  function inList(ids) { return 'in.' + encodeURIComponent('(' + ids.map(x => '"' + String(x).replace(/["\\]/g, '') + '"').join(',') + ')'); }
   // 변기 XP: 방문 1회 = 10xp, 서로 다른 탐험가 1명 = +15xp 보너스
-  function statsFrom(v) {
-    const ex = new Set(v.map(x => x.user_id));
-    const xp = v.length * 10 + ex.size * 15;
-    return { xp, level: toiletLevel(xp), visits: v.length, explorers: ex.size, first_nick: v[0]?.nick || null, mine: v.filter(x => x.user_id === uid).length };
+  function statsOf(visits, explorers, first_nick, mine) {
+    const xp = visits * 10 + explorers * 15;
+    return { xp, level: toiletLevel(xp), visits, explorers, first_nick, mine };
   }
+  function statsFrom(v) { return statsOf(v.length, new Set(v.map(x => x.user_id)).size, v[0]?.nick || null, v.filter(x => x.user_id === uid).length); }
   function toiletLevel(xp) { return Math.min(99, Math.floor(Math.sqrt(xp / 25)) + 1); }
   function groupMine(rows) { const m = {}; for (const r of rows) { const g = m[r.toilet_id] || (m[r.toilet_id] = { toilet_id: r.toilet_id, toilet_name: r.toilet_name, count: 0, last: r.at }); g.count++; if (r.at > g.last) g.last = r.at; } return Object.values(m).sort((a, b) => b.count - a.count); }
 
