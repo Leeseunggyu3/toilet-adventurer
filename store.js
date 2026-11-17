@@ -5,11 +5,23 @@
 
 const Store = (() => {
   const KEY = 'ghc-v0';
-  let s = { coins: 0, xp: 0, reports: {}, toilets: {}, verified: {}, daily: { day: '', done: 0 }, quests: 0 };
+  // 상태 보고(내 것 + 서버에서 받은 주변 것)는 따로 'ghc-rep'에 두고 이틀 지난 것은 지운다.
+  // 예전에는 ghc-v0 안에 끝없이 쌓여서 저장 공간을 채우고, 계정 백업도 쓸데없이 자주 다시 올라갔다
+  const RKEY = 'ghc-rep', KEEP = 48 * 3600e3;
+  let s = { coins: 0, xp: 0, toilets: {}, verified: {}, daily: { day: '', done: 0 }, quests: 0 };
   try { const raw = localStorage.getItem(KEY); if (raw) s = Object.assign(s, JSON.parse(raw)); } catch (e) {}
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} };
+  let reps = {}; try { reps = JSON.parse(localStorage.getItem(RKEY) || 'null') || {}; } catch (e) {}
+  if (s.reports) { for (const id in s.reports) reps[id] = Object.assign({}, s.reports[id], reps[id]); delete s.reports; }
   // 하루의 기준은 사용자의 현지 날짜
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  const saveRep = () => { try { localStorage.setItem(RKEY, JSON.stringify(reps)); } catch (e) {} };
+  function prune() {
+    const old = Date.now() - KEEP;
+    for (const id in reps) { const r = reps[id]; for (const k in r) if (!(r[k] && r[k].t > old)) delete r[k]; if (!Object.keys(r).length) delete reps[id]; }
+    for (const id in s.verified) if (s.verified[id] !== today()) delete s.verified[id];  // 오늘 인증 여부만 필요하다
+  }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} };
+  prune(); save(); saveRep();
 
   return {
     get coins() { return s.coins; },
@@ -21,14 +33,14 @@ const Store = (() => {
 
     // 상태 보고: { open, paper, clean, queue } 각 0/1, 시각
     report(id, k, v) {
-      const r = s.reports[id] || {};
+      const r = reps[id] || {};
       r[k] = { v, t: Date.now() };
-      s.reports[id] = r; save();
+      reps[id] = r; saveRep();
     },
-    reportsFor(id) { return s.reports[id] || {}; },
+    reportsFor(id) { return reps[id] || {}; },
     // 마지막 보고가 n시간 이내면 유효
     fresh(id, k, hours = 12) {
-      const r = (s.reports[id] || {})[k];
+      const r = (reps[id] || {})[k];
       return r && (Date.now() - r.t) < hours * 3600e3 ? r.v : null;
     },
 
@@ -39,14 +51,14 @@ const Store = (() => {
     mergeRemote(rows) {
       let changed = false;
       for (const x of rows) {
-        const r = s.reports[x.toilet_id] || (s.reports[x.toilet_id] = {});
-        const tms = new Date(x.at).getTime();
+        const tms = new Date(x.at).getTime(); if (!(Date.now() - tms < KEEP)) continue;
+        const r = reps[x.toilet_id] || (reps[x.toilet_id] = {});
         if (!r[x.k] || r[x.k].t < tms) { r[x.k] = { v: x.v, t: tms }; changed = true; }
       }
-      if (changed) save();
+      if (changed) { prune(); saveRep(); }
       return changed;
     },
-    flag(id) { const t = s.toilets[id]; if (t) { t.flagged = true; save(); } else { s.reports[id] = Object.assign(s.reports[id] || {}, { flagged: { v: 1, t: Date.now() } }); save(); } },
+    flag(id) { const t = s.toilets[id]; if (t) { t.flagged = true; save(); } else { reps[id] = Object.assign(reps[id] || {}, { flagged: { v: 1, t: Date.now() } }); saveRep(); } },
 
     // 도착 인증 (하루 1회/장소)
     canVerify(id) { return (s.verified[id] || '') !== today(); },

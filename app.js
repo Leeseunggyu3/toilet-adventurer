@@ -521,7 +521,7 @@
   }
   async function send(channel, inputId, elId, toilet_id, text) {
     text = (text || $(inputId).value).trim(); if (!text) return;
-    const kind = replyTo ? 'answer' : /\?|나요|있어요|어디|추천/.test(text) ? 'question' : 'chat';
+    const kind = replyTo ? 'answer' : /[?？]|나요|있어요|어디|추천|where|anyone|どこ|ありますか|ですか/i.test(text) ? 'question' : 'chat';
     try { await B.postMessage({ channel, toilet_id, text, kind, parent: replyTo }); } catch (e) { console.error(e); return toast('전송 실패: ' + String(e.message || e).slice(0, 140), 9000); }
     $(inputId).value = ''; $(inputId).placeholder = inputId === 'toiletMsg' ? '이 변기에 남길 말…' : '동네 탐험가들에게…'; replyTo = null;
     $(elId).dataset.sig = '';

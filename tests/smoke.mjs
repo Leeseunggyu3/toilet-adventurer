@@ -401,6 +401,17 @@ try {
   const pv = await page.request.get(BASE + '/privacy.html');
   check('개인정보처리방침 페이지가 열림', pv.ok() && (await pv.text()).includes('개인정보처리방침'));
   check('전체 흐름 중 자바스크립트 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 300));
+
+  // 저장 공간: 예전 형식(ghc-v0 안에 보고가 쌓인 것)을 옮기고 오래된 것은 지운다
+  const now = Date.now();
+  await page.evaluate(n => {
+    localStorage.setItem('ghc-v0', JSON.stringify({ coins: 12, xp: 34, reports: { oldT: { open: { v: 1, t: n - 5 * 864e5 } }, newT: { paper: { v: 0, t: n - 3600e3 } } }, toilets: {}, verified: { a: '2020-01-01' }, daily: { day: '', done: 0 } }));
+    localStorage.removeItem('ghc-rep');
+  }, now);
+  await page.reload(); await page.waitForTimeout(1500);
+  const st = await page.evaluate(() => ({ v0: JSON.parse(localStorage.getItem('ghc-v0')), rep: JSON.parse(localStorage.getItem('ghc-rep') || '{}') }));
+  check('저장 공간: 보고는 별도 칸으로 옮겨지고 계정 백업 칸(ghc-v0)에서는 빠짐', !('reports' in st.v0) && !!st.rep.newT, JSON.stringify(st).slice(0, 200));
+  check('저장 공간: 이틀 지난 보고와 지난 날짜의 인증 기록은 지움', !st.rep.oldT && !st.v0.verified.a);
 } catch (e) {
   check('점검 스크립트가 끝까지 실행됨', false, String(e).slice(0, 300));
 }
