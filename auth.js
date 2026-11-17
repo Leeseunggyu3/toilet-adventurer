@@ -12,17 +12,36 @@ window.Auth = (() => {
   const keep = () => { try { sess ? localStorage.setItem(SKEY, JSON.stringify(sess)) : localStorage.removeItem(SKEY); } catch (e) {} };
   let justSignedIn = false, loginError = null;
 
-  // 구글에서 돌아오면 주소 뒤(#)에 토큰이 붙어 온다 → 저장하고 주소를 깨끗하게
-  (function readHash() {
-    const h = location.hash.startsWith('#') ? location.hash.slice(1) : '';
-    if (!h.includes('access_token=') && !h.includes('error')) return;
+  // 안드로이드 앱 안인지. 앱에서는 구글이 앱 속 화면 로그인을 막아서, 바깥 브라우저로 로그인하고 앱 주소로 돌아온다
+  const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  const APP_RETURN = 'com.toiletadventure.app://auth';
+  // 구글에서 돌아오면 주소 뒤(#)에 토큰이 붙어 온다 → 저장
+  function takeHash(h) {
+    if (!h.includes('access_token=') && !h.includes('error')) return false;
     const p = new URLSearchParams(h);
     if (p.get('access_token')) {
       sess = { access_token: p.get('access_token'), refresh_token: p.get('refresh_token'), expires_at: Date.now() + (+p.get('expires_in') || 3600) * 1000, email: null };
       keep(); justSignedIn = true;
     } else if (p.get('error_description') || p.get('error')) loginError = p.get('error_description') || p.get('error');
-    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
-  })();
+    return true;
+  }
+  if (takeHash(location.hash.startsWith('#') ? location.hash.slice(1) : '')) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
+  // 앱: 로그인 결과를 받고 다시 시작했을 때 이어서 처리
+  try { const j = sessionStorage.getItem('ghc-just'); if (j) { sessionStorage.removeItem('ghc-just'); if (j === '1') justSignedIn = true; else loginError = j; } } catch (e) {}
+  if (NATIVE) {
+    const P = window.Capacitor.Plugins || {};
+    const onUrl = url => {
+      if (!url || !url.startsWith(APP_RETURN)) return;
+      const i = url.indexOf('#'), q = url.indexOf('?');
+      const before = justSignedIn;
+      if (!takeHash(i >= 0 ? url.slice(i + 1) : q >= 0 ? url.slice(q + 1) : '')) return;
+      try { sessionStorage.setItem('ghc-just', justSignedIn && !before ? '1' : (loginError || '1')); } catch (e) {}
+      try { P.Browser && P.Browser.close(); } catch (e) {}
+      location.reload();
+    };
+    try { P.App && P.App.addListener('appUrlOpen', e => onUrl(e && e.url)); } catch (e) {}
+    try { P.App && P.App.getLaunchUrl().then(r => { if (r && r.url && !sessionStorage.getItem('ghc-launch-done')) { sessionStorage.setItem('ghc-launch-done', '1'); onUrl(r.url); } }).catch(() => {}); } catch (e) {}
+  }
 
   // 토큰 갱신은 한 번에 하나만 (동시에 두 번 갱신하면 서버가 같은 갱신 토큰 재사용으로 보고 로그인을 끊을 수 있다)
   let refreshing = null;
@@ -50,7 +69,13 @@ window.Auth = (() => {
     get email() { return sess && sess.email; },
     get justSignedIn() { return justSignedIn; },
     get loginError() { return loginError; },
-    signIn() { location.href = `${URL0}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(location.origin + location.pathname)}`; },
+    native: NATIVE,
+    signIn() {
+      const back = NATIVE ? APP_RETURN : location.origin + location.pathname;
+      const url = `${URL0}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(back)}`;
+      const P = NATIVE && window.Capacitor.Plugins;
+      if (P && P.Browser) P.Browser.open({ url }).catch(() => { location.href = url; }); else location.href = url;
+    },
     async signOut() { try { const h = await hdr(); await fetch(`${URL0}/auth/v1/logout`, { method: 'POST', headers: h }); } catch (e) {} sess = null; keep(); },
     async fetchUser() { const r = await fetch(`${URL0}/auth/v1/user`, { headers: await hdr() }); if (!r.ok) throw new Error(`[${r.status}] 사용자 정보를 가져오지 못했어요`); const j = await r.json(); sess.email = j.email || '구글 계정'; keep(); return sess.email; },
     async loadAccount() { const r = await fetch(`${URL0}/rest/v1/accounts?select=state,updated_at`, { headers: await hdr() }); if (!r.ok) throw new Error(`[${r.status}] ${(await r.text()).slice(0, 160)}`); const rows = await r.json(); return rows[0] || null; },

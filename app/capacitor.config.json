@@ -1,0 +1,6 @@
+{
+  "appId": "com.toiletadventure.app",
+  "appName": "Toilet Adventure",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

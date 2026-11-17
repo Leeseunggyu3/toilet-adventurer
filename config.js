@@ -6,4 +6,5 @@ window.GHC_CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_O9PHZVfHx20CFcMIPsQNtg_EN0_bjKU', // Project Settings → API → anon public
   GOOGLE_LOGIN: true,    // false로 바꾸면 로그인 버튼이 숨겨진다 (게스트만 사용)
   AD_BANNER: { enabled: false, client: '', slot: '' },  // 광고 심사 승인 후 채운다 (ads.js 참고)
+  WEB_URL: 'https://leeseunggyu3.github.io/toilet-adventurer/',  // 안드로이드 앱이 화장실 데이터를 받아오는 웹 주소 (도메인을 바꾸면 여기도)
 };

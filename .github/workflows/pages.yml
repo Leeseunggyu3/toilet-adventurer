@@ -36,6 +36,7 @@ jobs:
           python3 -m http.server 8765 >/dev/null 2>&1 &
           sleep 2
           node tests/smoke.mjs
+          node tests/native.test.mjs
   deploy:
     needs: test          # 점검이 실패하면 배포하지 않는다
     runs-on: ubuntu-latest
@@ -59,7 +60,7 @@ jobs:
           sed -i -E "s#\?v=[0-9a-z]+\"#?v=$V\"#g" index.html
           sed -i "s#__VERSION__#$V#" app.js
           sed -i -E "s#ghc-shell-[0-9a-z]+#ghc-shell-$V#" sw.js
-          rm -rf tests supabase tools .github
+          rm -rf tests supabase tools .github app
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

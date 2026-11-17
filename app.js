@@ -68,10 +68,13 @@
   // 격자 한 칸(약 2km) 전체를 불러온다. 예전에는 '처음 본 지점 주변 1.3km'만 불러와서 같은 칸 안의 먼 곳이 비는 문제가 있었다
   // ===== 미리 받아둔 화장실 데이터 (data/ 폴더, 매주 갱신) =====
   // index.json: 덮는 지역, 실패한 지역(missing), 타일별 개수. 타일 = 0.5도 칸, 파일 data/t/{floor(위도*2)}_{floor(경도*2)}.json
+  // 앱에는 화장실 데이터가 들어 있지 않다. 매주 바뀌는 데이터를 웹사이트에서 받아온다
+  const NATIVE = !!(window.Auth && window.Auth.native);
+  const DATA = NATIVE ? String((window.GHC_CONFIG || {}).WEB_URL || 'https://leeseunggyu3.github.io/toilet-adventurer/').replace(/\/?$/, '/') + 'data/' : 'data/';
   let dataIndex; // undefined = 아직 안 봄, null = 없음
   async function getIndex() {
     if (dataIndex !== undefined) return dataIndex;
-    try { const r = await fetch('data/index.json', { cache: 'no-cache' }); dataIndex = r.ok ? await r.json() : null; } catch (e) { dataIndex = null; }
+    try { const r = await fetch(DATA + 'index.json', { cache: 'no-cache' }); dataIndex = r.ok ? await r.json() : null; } catch (e) { dataIndex = null; }
     if (dataIndex && !(dataIndex.region && dataIndex.tiles)) dataIndex = null;
     return dataIndex;
   }
@@ -83,7 +86,7 @@
   const tileCache = new Map();
   function getTile(key) {
     if (!tileCache.has(key)) {
-      const p = fetch(`data/t/${key}.json?d=${encodeURIComponent(dataIndex.at || '')}`).then(r => { if (!r.ok) throw new Error('tile ' + r.status); return r.json(); }).then(j => j.t || []);
+      const p = fetch(`${DATA}t/${key}.json?d=${encodeURIComponent(dataIndex.at || '')}`).then(r => { if (!r.ok) throw new Error('tile ' + r.status); return r.json(); }).then(j => j.t || []);
       p.catch(() => tileCache.delete(key)); tileCache.set(key, p);
     }
     return tileCache.get(key);
@@ -944,5 +947,17 @@
   refreshHUD();
   locate(true);
   setTimeout(() => { if (!me) loadAround(...DEFAULT); }, 9000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 안드로이드 뒤로 가기: 열린 창이 있으면 닫고, 없으면 앱을 나간다
+  if (NATIVE) {
+    const P = window.Capacitor.Plugins || {};
+    try {
+      P.App && P.App.addListener('backButton', () => {
+        const open = ['photoView', 'acctDlg', 'addDlg', 'mission', 'shop', 'peek', 'sheet', 'sos', 'area', 'profile', 'help'].find(id => $(id) && !$(id).classList.contains('hidden'));
+        if (open === 'photoView' || open === 'acctDlg' || open === 'addDlg' || open === 'mission') $(open).classList.add('hidden');
+        else if (open) closeSheets();
+        else P.App.exitApp();
+      });
+    } catch (e) {}
+  }
 })();
