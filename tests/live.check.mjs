@@ -62,6 +62,11 @@ if (v6) {
   if (r.status === 200 && r.j && r.j.visits === 0) line('✅', '변기 기록 서버 집계(v8) 동작', '방문 기록 대신 숫자만 보냄');
   else if (r.status === 404) line('⏳', '변기 기록 서버 집계(v8) 아직 실행 전', '최신 schema_v8_evidence.sql을 실행하면 켜짐 (그 전엔 예전 방식)');
   else line('❌', '변기 기록 서버 집계 오류', `[${r.status}] ${String(r.t).slice(0, 160)}`); }
+{ const r = await rpc('wallet_state', { p_user: 'live-check-nobody' });
+  const c = await rpc('claim_ad_bonus', { p_user: 'live-check-nobody', p_secret: 'x' });  // 열쇠가 짧아 거절되어야 정상 (함수가 있다는 뜻)
+  if (r.status === 200 && r.j && typeof r.j.ads_today === 'number' && c.status !== 404) line('✅', '앱 광고 보너스(v9) 준비됨', '하루 3번, 끝까지 본 광고만');
+  else if (c.status === 404 || (r.j && r.j.ads_today === undefined)) line('⏳', '앱 광고 보너스(v9) 아직 실행 전', 'schema_v9_ads.sql을 실행하면 앱 상점에 광고 버튼이 나옴');
+  else line('❌', '앱 광고 보너스 확인 오류', `[${c.status}] ${String(c.t).slice(0, 160)}`); }
 
 // 4. 구글 로그인 설정
 { const r = await call('/auth/v1/settings');

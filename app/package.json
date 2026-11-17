@@ -8,6 +8,7 @@
     "android": "npx cap add android && node scripts/patch-android.mjs && npx capacitor-assets generate --android && npx cap sync android"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^8.4.2",
     "@capacitor/android": "8.6.2",
     "@capacitor/app": "8.1.2",
     "@capacitor/browser": "8.0.5",

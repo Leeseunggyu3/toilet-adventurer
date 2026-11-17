@@ -105,6 +105,7 @@
     }
     walletState() { return this._rpc('wallet_state', { p_user: uid }); }
     claimBonus() { return this._rpc('claim_bonus', { p_user: uid, p_secret: secret }); }
+    claimAdBonus() { return this._rpc('claim_ad_bonus', { p_user: uid, p_secret: secret }); }
     claimMission(toilet) { return this._rpc('claim_mission', { p_user: uid, p_secret: secret, p_toilet: toilet }); }
     claimTut() { return this._rpc('claim_tut', { p_user: uid, p_secret: secret }); }
     buyItem(item) { return this._rpc('buy_item', { p_user: uid, p_secret: secret, p_item: item }); }

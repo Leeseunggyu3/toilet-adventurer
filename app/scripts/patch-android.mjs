@@ -21,7 +21,12 @@ if (!x.includes('android:scheme="com.toiletadventure.app"')) {
   const i = x.indexOf('</activity>'); if (i < 0) throw new Error('MainActivity를 찾지 못함');
   x = x.slice(0, i) + deep + '        ' + x.slice(i);
 }
-for (const must of [...perms, 'com.toiletadventure.app']) if (!x.includes(must)) throw new Error('적용 실패: ' + must);
+// 애드몹 앱 ID (config.js의 ADMOB.APP_ID). 이게 없으면 광고 SDK가 앱을 바로 꺼버린다
+const cfgText = readFileSync(join(app, '..', 'config.js'), 'utf8');
+const admobId = (cfgText.match(/APP_ID:\s*'(ca-app-pub-[0-9]+~[0-9]+)'/) || [])[1];
+if (!admobId) throw new Error('config.js에서 애드몹 APP_ID를 찾지 못함');
+if (!x.includes('com.google.android.gms.ads.APPLICATION_ID')) x = x.replace('<activity', `<meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="${admobId}" />\n        <activity`);
+for (const must of [...perms, 'com.toiletadventure.app', admobId]) if (!x.includes(must)) throw new Error('적용 실패: ' + must);
 writeFileSync(mf, x);
 // 버전: CI 실행 번호를 versionCode로 (스토어 업데이트는 번호가 올라가야 한다)
 const code = process.env.APP_VERSION_CODE, name = process.env.APP_VERSION_NAME;

@@ -22,6 +22,13 @@ await ctx.addInitScript(() => {
         exitApp() { log('exit'); },
       },
       Browser: { open(o) { log('open:' + o.url); return Promise.resolve(); }, close() { log('close'); return Promise.resolve(); } },
+      AdMob: {
+        initialize(o) { log('admob-init:' + !!(o && o.initializeForTesting)); return Promise.resolve(); },
+        requestConsentInfo() { return Promise.resolve({ status: 'NOT_REQUIRED', isConsentFormAvailable: false }); },
+        showConsentForm() { return Promise.resolve({}); },
+        prepareRewardVideoAd(o) { log('ad-prepare:' + o.adId + ':' + o.isTesting); return Promise.resolve({}); },
+        showRewardVideoAd() { log('ad-show'); return window.__adSkip ? Promise.reject(new Error('closed')) : Promise.resolve({ type: 'coin', amount: 1 }); },
+      },
     },
   };
 });
@@ -30,9 +37,14 @@ const errors = []; page.on('pageerror', e => errors.push(String(e)));
 const dataHits = [];
 await page.route('**/tile.openstreetmap.org/**', r => r.abort());
 await page.route('**/overpass-api.de/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"elements":[]}' }));
-await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: `window.GHC_CONFIG={SUPABASE_URL:'${BASE}/sb',SUPABASE_ANON_KEY:'test',GOOGLE_LOGIN:true,WEB_URL:'${WEB}'};` }));
+await page.route('**/config.js*', r => r.fulfill({ status: 200, contentType: 'application/javascript', body: `window.GHC_CONFIG={SUPABASE_URL:'${BASE}/sb',SUPABASE_ANON_KEY:'test',GOOGLE_LOGIN:true,WEB_URL:'${WEB}',ADMOB:{APP_ID:'ca-app-pub-9172087324454924~8470291923',REWARDED:'ca-app-pub-9172087324454924/5174703884',TESTING:true}};` }));
 await page.route('**/sb/auth/v1/user', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"email":"app@test"}' }));
+// 나중에 등록한 규칙이 먼저 적용되므로, 일반 규칙을 먼저 등록한다
 await page.route('**/sb/**', r => r.fulfill({ status: r.request().method() === 'GET' ? 200 : 404, contentType: 'application/json', body: '[]' }));
+const wallet = { coins: 100, xp: 0, earned: 100, spent: 0, titles: [], owned: [], bonus_today: true, missions_today: 0, ads_today: 0, stats: {} };
+let adClaims = 0;
+await page.route('**/sb/rest/v1/rpc/wallet_state', r => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(wallet) }));
+await page.route('**/sb/rest/v1/rpc/claim_ad_bonus', r => { adClaims++; wallet.ads_today++; wallet.coins += 30; wallet.earned += 30; r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(wallet) }); });
 await page.route(WEB + 'data/**', r => {
   dataHits.push(r.request().url());
   if (r.request().url().includes('index.json')) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ v: 1, at: '2026-11-17T00:00:00Z', region: { s: 37, w: 126, n: 38, e: 127.5 }, tile: 0.5, total: 1, missing: [], tiles: { '75_253': 1 } }) });
@@ -76,6 +88,20 @@ try {
   check('앱: 뒤로 가기는 열린 창을 닫음', await page.isHidden('#help'));
   await back(); await page.waitForTimeout(200);
   check('앱: 열린 창이 없으면 뒤로 가기로 앱을 나감', (await page.evaluate(() => JSON.parse(localStorage.getItem('cap-calls') || '[]'))).includes('exit'));
+
+  // 보상형 광고: 상점에 버튼 → 끝까지 보면 서버에 청구 → 코인 반영. 도중에 닫으면 청구하지 않음
+  await page.evaluate(() => document.getElementById('shopBtn').click()); await page.waitForTimeout(800);
+  const cs = await page.evaluate(() => JSON.parse(localStorage.getItem('cap-calls') || '[]'));
+  check('광고: 애드몹을 시험 모드로 시작', cs.includes('admob-init:true'));
+  check('광고: 앱 상점에 광고 보너스 버튼이 보임', await page.isVisible('#adBtn') && (await page.innerText('#adBtn')).includes('0/3'), await page.innerText('#adBtn').catch(() => ''));
+  await page.click('#adBtn'); await page.waitForTimeout(800);
+  const cs2 = await page.evaluate(() => JSON.parse(localStorage.getItem('cap-calls') || '[]'));
+  check('광고: 우리 광고 번호로 불러와서 보여줌', cs2.includes('ad-prepare:ca-app-pub-9172087324454924/5174703884:true') && cs2.includes('ad-show'));
+  check('광고: 끝까지 보면 서버에 보너스 청구, 코인 반영', adClaims === 1 && (await page.innerText('#adBtn')).includes('1/3') && (await page.innerText('#shopCoins')).includes('130'), await page.innerText('#shopCoins'));
+  await page.evaluate(() => { window.__adSkip = true; }); await page.click('#adBtn'); await page.waitForTimeout(800);
+  check('광고: 도중에 닫으면 보너스 청구 안 함', adClaims === 1);
+  await page.evaluate(() => { window.__adSkip = false; }); await page.click('#adBtn'); await page.waitForTimeout(600); await page.click('#adBtn'); await page.waitForTimeout(800);
+  check('광고: 하루 3번 채우면 버튼이 꺼짐', adClaims === 3 && await page.isDisabled('#adBtn'));
   check('앱 흐름 중 자바스크립트 오류 없음', errors.length === 0, errors.join(' | ').slice(0, 300));
 } catch (e) {
   check('앱 점검 스크립트가 끝까지 실행됨', false, String(e).slice(0, 300));

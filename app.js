@@ -658,6 +658,10 @@
     $('shopCoins').textContent = `💰 ${Store.coins.toLocaleString()}`;
     const claimed = serverMode ? !!(srv && srv.bonus_today) : s.bonusDay === todayStr();
     $('bonusBtn').disabled = claimed; $('bonusBtn').textContent = claimed ? '오늘의 보너스 받음 · 내일 다시' : `🎁 오늘의 보너스 받기 +${DAILY_BONUS + rb('bonus')}💰`;
+    // 앱에서만: 광고 보고 보너스 (서버 지갑이 있을 때. 하루 3번)
+    const adOn = !!(Ads.ready() && serverMode && srv && typeof srv.ads_today === 'number');
+    $('adBtn').classList.toggle('hidden', !adOn);
+    if (adOn) { const left = AD_MAX - srv.ads_today; $('adBtn').disabled = left <= 0 || Ads.busy; $('adBtn').textContent = left > 0 ? `📺 광고 보고 +${AD_COIN}💰 (${srv.ads_today}/${AD_MAX})` : '오늘 광고 보너스 끝 · 내일 다시'; }
     $('shopTabs').innerHTML = Object.keys(SHOP).map(k => `<button class="${shopTab === k ? 'on' : ''}" data-k="${k}">${SHOP[k].name}</button>`).join('');
     $('shopTabs').querySelectorAll('button').forEach(b => b.onclick = () => { shopTab = b.dataset.k; renderShop(); });
     $('shopList').innerHTML = SHOP[shopTab].items.map(it => {
@@ -713,6 +717,38 @@
     queueProfileSync();
   }
   $('bonusBtn').onclick = grantBonus;
+  // 보상형 광고 (안드로이드 앱 + 애드몹). 광고를 끝까지 봤을 때만 서버에 보너스를 청구한다
+  const AD_COIN = 30, AD_MAX = 3;
+  const Ads = (() => {
+    const cfg = (window.GHC_CONFIG || {}).ADMOB || {}, P = NATIVE && window.Capacitor.Plugins && window.Capacitor.Plugins.AdMob;
+    let ok = false;
+    const api = { busy: false, ready: () => ok };
+    if (P && cfg.REWARDED) {
+      (async () => {
+        try {
+          await P.initialize({ initializeForTesting: !!cfg.TESTING });
+          try { const c = await P.requestConsentInfo(); if (c && c.isConsentFormAvailable && c.status === 'REQUIRED') await P.showConsentForm(); } catch (e) {}  // 유럽 등 동의가 필요한 곳
+          ok = true; if (!$('shop').classList.contains('hidden')) renderShop();
+        } catch (e) { console.warn('admob', e); }
+      })();
+    }
+    api.show = async () => {
+      await P.prepareRewardVideoAd({ adId: cfg.REWARDED, isTesting: !!cfg.TESTING });
+      const r = await P.showRewardVideoAd();
+      return !!r;  // 끝까지 보면 보상 정보가 온다
+    };
+    return api;
+  })();
+  $('adBtn').onclick = async () => {
+    if (Ads.busy || !Ads.ready()) return;
+    Ads.busy = true; renderShop();
+    try {
+      let watched = false;
+      try { watched = await Ads.show(); } catch (e) { toast('지금은 광고를 불러오지 못했어요. 잠시 후 다시 해주세요', 3500); }
+      if (watched) { const d = applyWallet(await B.claimAdBonus()); toast(d > 0 ? `📺 광고 보너스 +${d}💰` : '광고 보너스를 받지 못했어요', 2500); }
+    } catch (e) { toast('보너스 실패: ' + String(e.message || e).slice(0, 100), 5000); }
+    finally { Ads.busy = false; renderShop(); }
+  };
   $('shopClose').onclick = () => $('shop').classList.add('hidden');
   $('shopBtn').onclick = openShop; $('coinBtn').onclick = openShop;
 

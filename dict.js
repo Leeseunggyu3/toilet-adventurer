@@ -613,6 +613,30 @@ window.GHC_DICT = {
 "🎁 Today's bonus +{0}💰",
 "🎁 今日のボーナス +{0}💰"
 ],
+"📺 광고 보고 +{0}💰 ({1}/{2})": [
+"📺 Watch an ad +{0}💰 ({1}/{2})",
+"📺 広告を見て +{0}💰 ({1}/{2})"
+],
+"오늘 광고 보너스 끝 · 내일 다시": [
+"Today's ad bonuses done · Come back tomorrow",
+"今日の広告ボーナスは終了 · また明日"
+],
+"📺 광고 보너스 +{0}💰": [
+"📺 Ad bonus +{0}💰",
+"📺 広告ボーナス +{0}💰"
+],
+"광고 보너스를 받지 못했어요": [
+"Couldn't get the ad bonus",
+"広告ボーナスを受け取れませんでした"
+],
+"지금은 광고를 불러오지 못했어요. 잠시 후 다시 해주세요": [
+"Couldn't load an ad right now. Please try again shortly",
+"今は広告を読み込めませんでした。少ししてからもう一度お試しください"
+],
+"오늘 광고 보너스는 다 받았어요": [
+"You've used all of today's ad bonuses",
+"今日の広告ボーナスはすべて受け取りました"
+],
 "오늘의 보너스는 이미 받았어요": [
 "You've already claimed today's bonus",
 "今日のボーナスは受け取り済みです"

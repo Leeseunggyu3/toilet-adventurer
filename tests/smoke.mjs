@@ -225,6 +225,7 @@ try {
   await page.reload(); await page.waitForTimeout(1500);
   await page.click('#coinBtn'); await page.waitForTimeout(300);
   check('상점: 화면 위 코인을 누르면 열림', await page.isVisible('#shop') && (await page.innerText('#shopCoins')).includes('500'));
+  check('상점: 웹에서는 광고 보너스 버튼이 안 보임 (앱 전용)', await page.isHidden('#adBtn'));
   await page.click('#bonusBtn'); await page.waitForTimeout(300);
   check('상점: 오늘의 보너스는 하루 한 번(+50, 장착한 유물 주인의 인장 +5)', (await page.innerText('#shopCoins')).includes('555') && await page.isDisabled('#bonusBtn'));
   await page.click('#shopList [data-buy="bg_night"]'); await page.waitForTimeout(300);

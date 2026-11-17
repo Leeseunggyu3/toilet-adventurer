@@ -16,7 +16,7 @@ await db.exec(`
   create schema auth; create table auth.users (id uuid primary key);
   create function auth.uid() returns uuid language sql as $$ select null::uuid $$;
 `);
-for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql', 'schema_v8_evidence.sql']) {
+for (const f of ['schema.sql', 'schema_v2.sql', 'schema_v3_feedback.sql', 'schema_v4_profiles.sql', 'schema_v5_accounts.sql', 'schema_v6_wallet.sql', 'schema_v7_signed.sql', 'schema_v8_evidence.sql', 'schema_v9_ads.sql']) {
   const sql = readFileSync(new URL('../supabase/' + f, import.meta.url), 'utf8').replace(/create extension if not exists pgcrypto;/g, '');
   try { await db.exec(sql); check(`${f} 실행`, true); } catch (e) { check(`${f} 실행`, false, e.message); }
 }
@@ -234,6 +234,30 @@ check('변기 기록: 서버가 방문 수·탐험가 수·내 방문을 셈', s
 check('변기 기록: 기록이 없는 변기는 0', (await q(`select toilet_stats('nowhere') s`))[0].s.visits === 0);
 check('익명 사용자는 숨김 여부 칸을 직접 볼 수 없음', !(await q(`select has_column_privilege('anon','photos','hidden','select') x`))[0].x);
 check('익명 사용자는 사진 테이블에 직접 쓸 수 없음', !(await priv('anon', 'photos', 'insert')));
+
+// v9: 앱 광고 보너스 (위에서 v6을 다시 실행해 지갑 계산이 옛것으로 돌아갔으므로 v9을 다시 적용)
+await db.exec(readFileSync(new URL('../supabase/schema_v9_ads.sql', import.meta.url), 'utf8'));
+{
+  const A = 'ad_user', AK = 'ad-secret-ad-secret-ad';
+  let w = (await q('select claim_bonus($1,$2) s', [A, AK]))[0].s;
+  const base = w.coins;
+  check('광고 보너스: 오늘의 보너스와 따로 셈', w.bonus_today === true && w.ads_today === 0);
+  w = (await q('select claim_ad_bonus($1,$2) s', [A, AK]))[0].s;
+  check('광고 보너스: 한 번에 +30', w.coins === base + 30 && w.ads_today === 1 && w.bonus_today === true);
+  check('광고 보너스: 너무 빨리 다시 받으면 거절', ((await fails('select claim_ad_bonus($1,$2)', [A, AK])) || '').includes('잠시 후'));
+  await db.query(`update claims set at = at - interval '1 minute' where user_id = $1`, [A]);
+  await q('select claim_ad_bonus($1,$2)', [A, AK]);
+  await db.query(`update claims set at = at - interval '1 minute' where user_id = $1`, [A]);
+  w = (await q('select claim_ad_bonus($1,$2) s', [A, AK]))[0].s;
+  await db.query(`update claims set at = at - interval '1 minute' where user_id = $1`, [A]);
+  check('광고 보너스: 하루 3번까지', w.ads_today === 3 && w.coins === base + 90 && ((await fails('select claim_ad_bonus($1,$2)', [A, AK])) || '').includes('다 받았'));
+  check('광고 보너스: 남의 열쇠로는 못 받음', ((await fails('select claim_ad_bonus($1,$2)', [A, 'another-secret-another-secret'])) || '').includes('본인 확인'));
+  const B2 = 'ad_user2', BK = 'ad2-secret-ad2-secret-a';
+  w = (await q('select claim_ad_bonus($1,$2) s', [B2, BK]))[0].s;
+  check('광고 보너스: 광고를 먼저 봐도 오늘의 보너스는 그대로 받을 수 있음', w.bonus_today === false && w.ads_today === 1);
+  check('광고 보너스: 변기력(XP)에는 안 들어감', w.xp === 0);
+  try { await db.exec(readFileSync(new URL('../supabase/schema_v9_ads.sql', import.meta.url), 'utf8')); check('v9을 두 번 실행해도 안전', true); } catch (e) { check('v9을 두 번 실행해도 안전', false, e.message); }
+}
 
 const bad = results.filter(x => !x).length;
 console.log(`\n${results.length - bad}/${results.length} 통과`);
